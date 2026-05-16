@@ -1,0 +1,22 @@
+[project]
+name = "internet-testing"
+version = "0.1.0"
+description = "Deterministic website DOM explorer and Playwright test generator."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.52.0",
+]
+
+[project.scripts]
+internet-testing = "internet_testing.cli:main"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
