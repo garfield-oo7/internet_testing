@@ -1,9 +1,11 @@
 # Internet Testing
 
-A deterministic DOM explorer and Python Playwright test generator.
+A bounded DOM explorer and Python Playwright test generator.
 
-The application can crawl live website URLs with Playwright, extract stable DOM
-contracts, and write Python Playwright tests that run without any model call at
+The application crawls live website URLs with Playwright, explores same-origin
+links in a deterministic breadth-first order, extracts stable DOM contracts, and
+writes Python Playwright tests. Test generation can use an external model
+command, but the generated tests are validated and run without any model call at
 test execution time.
 
 ## Environment
@@ -26,10 +28,27 @@ From live URLs:
 
 ```bash
 uv run --active internet-testing \
-  https://www.swiggy.com/ \
-  https://www.zomato.com/ncr \
+  https://www.flipkart.com/ \
+  https://www.amazon.in/ \
+  --max-pages 4 \
+  --max-depth 1 \
   --output generated_playwright_tests.py
 ```
+
+To use an external model during generation, pass a command that reads the
+explored DOM JSON from stdin and writes a complete Python Playwright test file
+to stdout:
+
+```bash
+uv run --active internet-testing \
+  https://www.flipkart.com/ \
+  --max-pages 4 \
+  --max-depth 1 \
+  --llm-command "python scripts/write_tests_with_model.py" \
+  --output generated_playwright_tests.py
+```
+
+The CLI validates the model output before writing it.
 
 From saved HTML fixtures, which is useful for repeatable verification:
 
@@ -62,6 +81,10 @@ utility classes because they are unstable across deployments.
 
 ```bash
 uv run --active python -m unittest discover -s tests
+uv run --active pytest \
+  examples/test_generated_live_flipkart_deep.py \
+  examples/test_generated_live_amazon_in_deep.py \
+  --browser chromium
 ```
 
 ## Current Indian-Site Evidence
@@ -70,10 +93,15 @@ This repository includes deterministic fixtures for Swiggy and Zomato under
 `tests/fixtures/`, plus a generated Playwright artifact at
 `examples/test_generated_indian_sites.py`.
 
-Live crawling was also exercised against Swiggy and generated a URL-level smoke
-artifact at `examples/test_generated_live_swiggy.py`; this environment did not
-receive enough stable Swiggy DOM content for richer live assertions. Zomato live
-crawling from this environment failed at HTTPS transport before DOM capture:
-`net::ERR_HTTP2_PROTOCOL_ERROR` in Playwright and an HTTP/2 stream error with
-`curl`. The Zomato generator path is therefore verified with the committed
-complex DOM fixture rather than a live capture from this machine.
+Live deep crawling was exercised against two complex Indian commerce sites:
+
+1. Flipkart: `examples/test_generated_live_flipkart_deep.py`
+2. Amazon India: `examples/test_generated_live_amazon_in_deep.py`
+
+Those generated Playwright tests were run with Chromium through
+`pytest-playwright` and passed in this environment.
+
+Zomato live crawling from this environment failed at HTTPS transport before DOM
+capture: `net::ERR_HTTP2_PROTOCOL_ERROR` in Playwright and an HTTP/2 stream
+error with `curl`. Zomato is therefore covered with the committed complex DOM
+fixture rather than a live capture from this machine.
