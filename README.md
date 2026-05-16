@@ -8,6 +8,9 @@ writes Python Playwright tests. Test generation can use an external model
 command, but the generated tests are validated and run without any model call at
 test execution time.
 
+For a detailed architecture write-up, see
+[docs/architecture.md](docs/architecture.md).
+
 ## Environment
 
 Use the active `internet_testing` Python environment with `uv`:
