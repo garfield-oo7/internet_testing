@@ -4,6 +4,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from internet_testing.cli import main
 from internet_testing.explorer import explore_html_site
 from internet_testing.generator import generate_tests_with_llm, validate_generated_playwright
 
@@ -107,6 +108,43 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         generated = "import openai\n\ndef test_bad(page):\n    pass\n"
 
         with self.assertRaises(ValueError):
+            validate_generated_playwright(generated)
+
+    def test_cli_llm_command_writes_validated_playwright_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            writer = Path(tmpdir) / "writer.py"
+            output = Path(tmpdir) / "test_generated.py"
+            writer.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import sys
+
+                    payload = json.load(sys.stdin)
+                    assert payload["pages"][0]["url"] == "https://www.flipkart.com/"
+                    print("from playwright.sync_api import Page, expect")
+                    print()
+                    print("def test_cli_llm_contract(page: Page):")
+                    print("    page.goto('https://www.flipkart.com/')")
+                    print("    expect(page).to_have_url('https://www.flipkart.com/')")
+                    """
+                )
+            )
+
+            exit_code = main(
+                [
+                    "--html",
+                    f"https://www.flipkart.com/={Path(__file__).parent / 'fixtures' / 'swiggy_complex.html'}",
+                    "--llm-command",
+                    f"{sys.executable} {writer}",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+            generated = output.read_text()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("def test_cli_llm_contract", generated)
             validate_generated_playwright(generated)
 
 
