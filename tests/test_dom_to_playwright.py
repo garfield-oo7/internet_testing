@@ -21,6 +21,8 @@ class DomToPlaywrightTests(unittest.TestCase):
         self.assertIn('[data-testid="restaurant-card"]', selectors)
         self.assertIn('input[name="q"]', selectors)
         self.assertIn('button[aria-label="Add Chicken Biryani from Meghana Foods"]', selectors)
+        self.assertNotIn('[data-test="button"]', selectors)
+        self.assertNotIn('button[aria-label="Login/ Register"]', selectors)
         self.assertNotIn(".sc-kpOJdX", selectors)
         self.assertNotIn("._1x93s", selectors)
 
@@ -46,7 +48,7 @@ class DomToPlaywrightTests(unittest.TestCase):
         self.assertIn('page.goto("https://www.swiggy.com/")', first)
         self.assertIn('page.goto("https://www.zomato.com/ncr")', first)
         self.assertRegex(first, re.escape('expect(page.locator(\'[data-testid="restaurant-card"]\').first).to_be_visible()'))
-        self.assertRegex(first, re.escape("page.get_by_role(\"button\", name=\"Book a table\")"))
+        self.assertRegex(first, re.escape('expect(page.get_by_role("button", name="Book a table").first).to_be_visible()'))
         self.assertNotIn("openai", first.lower())
         self.assertNotIn("llm", first.lower())
 

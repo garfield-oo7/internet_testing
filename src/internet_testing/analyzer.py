@@ -5,6 +5,7 @@ from html import escape
 from html.parser import HTMLParser
 import re
 from typing import Iterable
+from urllib.parse import urldefrag, urljoin, urlparse
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,8 @@ def _candidate_to_element(candidate: _Candidate) -> DiscoveredElement | None:
         return None
     role = _role(candidate)
     name = _accessible_name(candidate)
+    if name and _is_dynamic_auth_control(name):
+        return None
     text = candidate.text or None
     return DiscoveredElement(selector=selector, role=role, name=name, text=text)
 
@@ -103,7 +106,7 @@ def _candidate_to_element(candidate: _Candidate) -> DiscoveredElement | None:
 def _stable_selector(candidate: _Candidate) -> str | None:
     attrs = candidate.attrs
     for attr in ("data-testid", "data-test", "data-qa", "data-cy"):
-        if attrs.get(attr):
+        if attrs.get(attr) and _is_specific_test_id(attrs[attr]):
             return f'[{attr}="{_css_string(attrs[attr])}"]'
 
     if attrs.get("aria-label"):
@@ -175,6 +178,36 @@ def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _is_specific_test_id(value: str) -> bool:
+    normalized = value.strip().lower()
+    generic = {
+        "button",
+        "link",
+        "input",
+        "container",
+        "wrapper",
+        "label",
+        "text",
+        "icon",
+    }
+    return bool(normalized) and normalized not in generic and len(normalized) >= 4
+
+
+def _is_dynamic_auth_control(value: str) -> bool:
+    normalized = value.strip().lower()
+    auth_terms = (
+        "login",
+        "log in",
+        "register",
+        "sign in",
+        "sign up",
+        "account",
+        "recently viewed",
+        "recommendations",
+    )
+    return any(term in normalized for term in auth_terms)
+
+
 def site_slug(url: str) -> str:
     slug = re.sub(r"^https?://", "", url.lower())
     slug = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
@@ -183,3 +216,52 @@ def site_slug(url: str) -> str:
 
 def iter_top_elements(model: PageModel, limit: int = 12) -> Iterable[DiscoveredElement]:
     return model.elements[:limit]
+
+
+def extract_same_origin_links(html: str, base_url: str) -> tuple[str, ...]:
+    parser = _LinkParser()
+    parser.feed(html)
+    parser.close()
+
+    base = urlparse(base_url)
+    links: set[str] = set()
+    for href in parser.hrefs:
+        absolute = urldefrag(urljoin(base_url, href))[0]
+        parsed = urlparse(absolute)
+        if parsed.scheme not in {"http", "https"}:
+            continue
+        if parsed.netloc != base.netloc:
+            continue
+        if _is_crawl_candidate(absolute):
+            links.add(absolute)
+
+    return tuple(sorted(links))
+
+
+def _is_crawl_candidate(url: str) -> bool:
+    parsed = urlparse(url)
+    lowered = url.lower()
+    path = parsed.path.lower()
+    if len(url) > 180:
+        return False
+    if "~cs-" in parsed.path:
+        return False
+    if "ctx=" in lowered or "nnc=" in lowered:
+        return False
+    if any(part in path for part in ("/account", "/login", "/signin", "/cart", "/checkout")):
+        return False
+    return True
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        normalized = {name.lower(): value or "" for name, value in attrs}
+        href = normalized.get("href", "").strip()
+        if href:
+            self.hrefs.append(href)
