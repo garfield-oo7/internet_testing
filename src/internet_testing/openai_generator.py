@@ -108,6 +108,10 @@ def generate_tests_with_openai_agent(
                     session.notes.setdefault("exploration_stop_reason", []).append(str(exc))
                 budget_exhausted = True
                 break
+            except ValueError as exc:
+                if str(exc).startswith("Unsupported OpenAI tool call:"):
+                    raise
+                result = {"error": str(exc)}
             outputs.append(
                 {
                     "type": "function_call_output",

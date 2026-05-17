@@ -432,6 +432,68 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertIn("exploration_stop_reason", author_payload)
         self.assertIn("Agent tool call limit reached: 1", author_payload)
 
+    def test_openai_agent_generation_reports_recoverable_tool_rejections_to_model(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
+
+        class FakeCall:
+            type = "function_call"
+
+            def __init__(self):
+                self.name = "link_status"
+                self.arguments = '{"url": "https://example.com/login"}'
+                self.call_id = "call_login"
+
+        class FakeResponse:
+            def __init__(self, response_id: str, output=None, output_text=""):
+                self.id = response_id
+                self.output = output or []
+                self.output_text = output_text
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+                self.responses = [
+                    FakeResponse("r1", output=[FakeCall()]),
+                    FakeResponse("r2", output_text="DONE_EXPLORING"),
+                    FakeResponse(
+                        "r3",
+                        output_text=(
+                            "from playwright.sync_api import Page, expect\n\n"
+                            "def test_recoverable_tool_rejection(page: Page):\n"
+                            "    page.goto('https://example.com/')\n"
+                            "    expect(page).to_have_url('https://example.com/')\n"
+                        ),
+                    ),
+                ]
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return self.responses.pop(0)
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        class RejectingSession:
+            notes = {}
+            trace = []
+
+            def link_status(self, url: str):
+                raise ValueError(f"Agent tools may not navigate unsafe commerce/auth path: {url}")
+
+        client = FakeClient()
+        code = generate_tests_with_openai_agent(
+            start_url="https://example.com/",
+            session=RejectingSession(),
+            config=OpenAIGenerationConfig(api_key="test-key"),
+            client=client,
+        )
+
+        self.assertIn("def test_recoverable_tool_rejection", code)
+        tool_output = client.responses.calls[1]["input"][0]
+        self.assertEqual(tool_output["type"], "function_call_output")
+        self.assertIn("unsafe commerce/auth path", tool_output["output"])
+
     def test_openai_generation_requires_api_key_before_client_creation(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
 
