@@ -370,6 +370,68 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
 
         self.assertIn("to_have_screenshot", code)
 
+    def test_openai_agent_generation_authors_from_partial_notes_when_tool_cap_is_hit(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
+
+        class FakeCall:
+            type = "function_call"
+
+            def __init__(self):
+                self.name = "query"
+                self.arguments = '{"selector": "h1"}'
+                self.call_id = "call_cap"
+
+        class FakeResponse:
+            def __init__(self, response_id: str, output=None, output_text=""):
+                self.id = response_id
+                self.output = output or []
+                self.output_text = output_text
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    return FakeResponse("r1", output=[FakeCall()])
+                return FakeResponse(
+                    "r2",
+                    output_text=(
+                        "from playwright.sync_api import Page, expect\n\n"
+                        "def test_partial_notes_contract(page: Page):\n"
+                        "    page.goto('https://example.com/')\n"
+                        "    expect(page).to_have_url('https://example.com/')\n"
+                    ),
+                )
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        class CappedSession:
+            notes = {"partial": ["Heading was visible before cap."]}
+            trace = [{"tool": "get_dom"}]
+
+            def query(self, selector: str):
+                raise RuntimeError("Agent tool call limit reached: 1")
+
+        session = CappedSession()
+        client = FakeClient()
+        code = generate_tests_with_openai_agent(
+            start_url="https://example.com/",
+            session=session,
+            config=OpenAIGenerationConfig(api_key="test-key"),
+            client=client,
+        )
+
+        self.assertIn("def test_partial_notes_contract", code)
+        self.assertEqual(len(client.responses.calls), 2)
+        self.assertNotIn("tools", client.responses.calls[1])
+        author_payload = client.responses.calls[1]["input"][0]["content"]
+        self.assertIn("exploration_stop_reason", author_payload)
+        self.assertIn("Agent tool call limit reached: 1", author_payload)
+
     def test_openai_generation_requires_api_key_before_client_creation(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
 

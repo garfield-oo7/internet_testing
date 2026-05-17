@@ -97,8 +97,17 @@ def generate_tests_with_openai_agent(
         if not calls:
             break
         outputs = []
+        budget_exhausted = False
         for call in calls:
-            result = _dispatch_tool_call(session, call["name"], call["arguments"])
+            try:
+                result = _dispatch_tool_call(session, call["name"], call["arguments"])
+            except RuntimeError as exc:
+                if not _is_agent_budget_error(exc):
+                    raise
+                if hasattr(session, "notes"):
+                    session.notes.setdefault("exploration_stop_reason", []).append(str(exc))
+                budget_exhausted = True
+                break
             outputs.append(
                 {
                     "type": "function_call_output",
@@ -106,6 +115,8 @@ def generate_tests_with_openai_agent(
                     "output": json.dumps(result, sort_keys=True),
                 }
             )
+        if budget_exhausted:
+            break
         response = client.responses.create(
             model=config.model,
             reasoning={"effort": effort},
@@ -274,6 +285,15 @@ def _dispatch_tool_call(session: Any, name: str, arguments: dict[str, object]) -
         raise ValueError(f"Unsupported OpenAI tool call: {name}")
     method = getattr(session, name)
     return method(**arguments)
+
+
+def _is_agent_budget_error(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return (
+        "Agent tool call limit reached" in message
+        or "Agent tool URL limit reached" in message
+        or "Agent tool wall-clock limit reached" in message
+    )
 
 
 def _extract_output_text(response: Any) -> str:
