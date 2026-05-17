@@ -4,11 +4,13 @@ import argparse
 import shlex
 from pathlib import Path
 
+from internet_testing.agent_tools import AgentToolCaps, AgentToolSession
 from internet_testing.generator import generate_playwright_tests, generate_tests_with_llm
 from internet_testing.openai_generator import (
     DEFAULT_OPENAI_MODEL,
     DEFAULT_REASONING_EFFORT,
     OpenAIGenerationConfig,
+    generate_tests_with_openai_agent,
     generate_tests_with_openai,
 )
 
@@ -34,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-ms", type=int, default=45_000)
     parser.add_argument("--max-pages", type=int, default=5)
     parser.add_argument("--max-depth", type=int, default=1)
+    parser.add_argument("--agent-max-tool-calls", type=int, default=40)
+    parser.add_argument("--agent-max-urls", type=int, default=8)
+    parser.add_argument("--agent-max-seconds", type=float, default=120.0)
     parser.add_argument(
         "--llm-command",
         help="Command that reads explored DOM JSON from stdin and writes Python Playwright tests to stdout.",
@@ -58,6 +63,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.openai and args.llm_command:
         parser.error("use either --openai or --llm-command, not both")
 
+    config = OpenAIGenerationConfig(
+        model=args.openai_model,
+        reasoning_effort=args.openai_reasoning_effort,
+    )
+    caps = AgentToolCaps(
+        max_tool_calls=args.agent_max_tool_calls,
+        max_distinct_urls=args.agent_max_urls,
+        max_wall_seconds=args.agent_max_seconds,
+    )
+
+    if args.openai and args.url and not args.html:
+        code = _generate_openai_agent_from_url(
+            args.url[0],
+            timeout_ms=args.timeout_ms,
+            config=config,
+            caps=caps,
+            screenshot_dir=Path(args.output).parent / "screenshots",
+        )
+        output = Path(args.output)
+        output.write_text(code)
+        print(f"wrote {output}")
+        return 0
+
     pages: list[tuple[str, str]] = []
     for mapping in args.html:
         pages.append(_read_html_mapping(mapping))
@@ -79,10 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.openai:
         code = generate_tests_with_openai(
             pages,
-            config=OpenAIGenerationConfig(
-                model=args.openai_model,
-                reasoning_effort=args.openai_reasoning_effort,
-            ),
+            config=config,
         )
     elif args.llm_command:
         code = generate_tests_with_llm(pages, command=shlex.split(args.llm_command))
@@ -130,6 +155,36 @@ def _crawl_urls(urls: list[str], timeout_ms: int, max_pages: int, max_depth: int
         finally:
             browser.close()
     return pages
+
+
+def _generate_openai_agent_from_url(
+    url: str,
+    timeout_ms: int,
+    config: OpenAIGenerationConfig,
+    caps: AgentToolCaps,
+    screenshot_dir: Path,
+) -> str:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise SystemExit("Playwright is required for live OpenAI generation. Run `uv sync`.") from exc
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_default_timeout(timeout_ms)
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            session = AgentToolSession(
+                page=page,
+                start_url=url,
+                screenshot_dir=screenshot_dir,
+                timeout_ms=timeout_ms,
+                caps=caps,
+            )
+            return generate_tests_with_openai_agent(url, session=session, config=config)
+        finally:
+            browser.close()
 
 
 if __name__ == "__main__":

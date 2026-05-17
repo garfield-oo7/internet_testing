@@ -346,6 +346,45 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
             self.assertEqual(generate.call_args.kwargs["config"].model, "gpt-5.5")
             validate_generated_playwright(generated)
 
+    def test_cli_live_openai_uses_agent_browser_path_instead_of_precrawl(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "test_generated.py"
+
+            with patch("internet_testing.cli._generate_openai_agent_from_url") as generate:
+                with patch("internet_testing.cli._crawl_urls") as crawl:
+                    generate.return_value = (
+                        "from playwright.sync_api import Page, expect\n\n"
+                        "def test_cli_agent_contract(page: Page):\n"
+                        "    page.goto('https://example.com/')\n"
+                        "    expect(page).to_have_url('https://example.com/')\n"
+                    )
+
+                    exit_code = main(
+                        [
+                            "https://example.com/",
+                            "--openai",
+                            "--openai-model",
+                            "gpt-5.5",
+                            "--agent-max-tool-calls",
+                            "7",
+                            "--agent-max-urls",
+                            "3",
+                            "--agent-max-seconds",
+                            "12",
+                            "--output",
+                            str(output),
+                        ]
+                    )
+
+            generated = output.read_text()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("def test_cli_agent_contract", generated)
+            crawl.assert_not_called()
+            self.assertEqual(generate.call_args.args[0], "https://example.com/")
+            self.assertEqual(generate.call_args.kwargs["caps"].max_tool_calls, 7)
+            self.assertEqual(generate.call_args.kwargs["caps"].max_distinct_urls, 3)
+            self.assertEqual(generate.call_args.kwargs["caps"].max_wall_seconds, 12)
+
 
 if __name__ == "__main__":
     unittest.main()
