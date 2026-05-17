@@ -111,6 +111,57 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_generated_playwright(generated)
 
+    def test_validator_rejects_runtime_network_and_environment_access(self):
+        generated = textwrap.dedent(
+            """
+            from playwright.sync_api import Page, expect
+            import requests
+            import os
+
+            def test_bad(page: Page):
+                token = os.environ["OPENAI_API_KEY"]
+                page.goto("https://www.flipkart.com/")
+                expect(page).to_have_url("https://www.flipkart.com/")
+            """
+        )
+
+        with self.assertRaisesRegex(ValueError, "import"):
+            validate_generated_playwright(generated)
+
+    def test_validator_requires_fill_and_type_values_to_be_string_literals(self):
+        generated = textwrap.dedent(
+            """
+            from playwright.sync_api import Page, expect
+
+            def test_bad(page: Page):
+                query = "phone"
+                page.goto("https://www.flipkart.com/")
+                page.get_by_role("textbox", name="Search").fill(query)
+            """
+        )
+
+        with self.assertRaisesRegex(ValueError, "fill"):
+            validate_generated_playwright(generated)
+
+    def test_validator_allows_screenshot_assertion_only_with_existing_baseline(self):
+        generated = textwrap.dedent(
+            """
+            from playwright.sync_api import Page, expect
+
+            def test_visual(page: Page):
+                page.goto("https://example.com/")
+                expect(page).to_have_screenshot("home.png")
+            """
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            baseline_dir = Path(tmpdir)
+            with self.assertRaisesRegex(ValueError, "screenshot baseline"):
+                validate_generated_playwright(generated, baseline_dir=baseline_dir)
+
+            (baseline_dir / "home.png").write_bytes(b"fake-png")
+            validate_generated_playwright(generated, baseline_dir=baseline_dir)
+
     def test_cli_llm_command_writes_validated_playwright_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             writer = Path(tmpdir) / "writer.py"

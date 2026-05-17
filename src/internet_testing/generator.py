@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 import subprocess
 import sys
 
@@ -64,15 +66,75 @@ def build_generation_payload(pages: list[tuple[str, str]]) -> dict[str, object]:
     }
 
 
-def validate_generated_playwright(code: str) -> None:
+def validate_generated_playwright(code: str, baseline_dir: Path | None = None) -> None:
+    tree = ast.parse(code, filename="<generated_playwright_tests>")
+    _validate_imports(tree)
+    _validate_no_environment_access(tree)
+    _validate_literal_input_values(tree)
+    _validate_screenshot_baselines(tree, baseline_dir=baseline_dir)
+
     lowered = code.lower()
     blocked_terms = ("openai", "anthropic", "langchain", "llama", "chatgpt", "litellm")
     for term in blocked_terms:
         if term in lowered:
             raise ValueError(f"generated Playwright test depends on blocked model term: {term}")
-    compile(code, "<generated_playwright_tests>", "exec")
+    compile(tree, "<generated_playwright_tests>", "exec")
     if "from playwright.sync_api import Page, expect" not in code:
         raise ValueError("generated tests must import Page and expect from playwright.sync_api")
+
+
+def _validate_imports(tree: ast.AST) -> None:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = ", ".join(alias.name for alias in node.names)
+            raise ValueError(f"generated Playwright test may not import runtime dependency: {names}")
+        if isinstance(node, ast.ImportFrom):
+            imported = {alias.name for alias in node.names}
+            if node.module != "playwright.sync_api" or imported != {"Page", "expect"}:
+                module = node.module or ""
+                raise ValueError(f"generated Playwright test has unsupported import: {module}")
+
+
+def _validate_no_environment_access(tree: ast.AST) -> None:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if node.value.id == "os" and node.attr in {"environ", "getenv"}:
+                raise ValueError("generated Playwright test may not read environment variables")
+
+
+def _validate_literal_input_values(tree: ast.AST) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"fill", "type"}:
+            continue
+        values = list(node.args) + [keyword.value for keyword in node.keywords]
+        if not values:
+            raise ValueError(f"generated Playwright test {node.func.attr}() requires literal string values")
+        for value in values:
+            if not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+                raise ValueError(
+                    f"generated Playwright test {node.func.attr}() arguments must be string literals"
+                )
+
+
+def _validate_screenshot_baselines(tree: ast.AST, baseline_dir: Path | None) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "to_have_screenshot":
+            continue
+        if not node.args or not (isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+            raise ValueError("generated Playwright test screenshot assertion must use a literal baseline name")
+        if baseline_dir is None:
+            raise ValueError("generated Playwright test screenshot baseline directory is required")
+        baseline_name = node.args[0].value
+        if not (baseline_dir / baseline_name).exists():
+            raise ValueError(f"generated Playwright test missing screenshot baseline: {baseline_name}")
 
 
 def _page_payload(url: str, html: str) -> dict[str, object]:
