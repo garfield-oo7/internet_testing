@@ -19,6 +19,7 @@ class OpenAIGenerationConfig:
     api_key: str | None = None
     model: str = DEFAULT_OPENAI_MODEL
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    max_tool_turns: int = 12
 
 
 def generate_tests_with_openai(
@@ -50,6 +51,90 @@ def generate_tests_with_openai(
         ],
     )
     code = _extract_output_text(response)
+    validate_generated_playwright(code)
+    return code
+
+
+def generate_tests_with_openai_agent(
+    start_url: str,
+    session: Any,
+    config: OpenAIGenerationConfig | None = None,
+    client: Any | None = None,
+) -> str:
+    config = config or OpenAIGenerationConfig()
+    effort = _validate_reasoning_effort(config.reasoning_effort)
+    api_key = config.api_key or _load_openai_api_key()
+
+    if client is None:
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for OpenAI test generation.")
+        client = _create_openai_client(api_key)
+
+    response = client.responses.create(
+        model=config.model,
+        reasoning={"effort": effort},
+        tools=_tool_definitions(),
+        input=[
+            {"role": "system", "content": _agent_explore_prompt()},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "start_url": start_url,
+                        "instructions": (
+                            "Explore this website with tools. Take notes. Signal DONE_EXPLORING "
+                            "when you have enough evidence to author deterministic Playwright tests."
+                        ),
+                    },
+                    sort_keys=True,
+                ),
+            },
+        ],
+    )
+
+    for _ in range(config.max_tool_turns):
+        calls = _extract_tool_calls(response)
+        if not calls:
+            break
+        outputs = []
+        for call in calls:
+            result = _dispatch_tool_call(session, call["name"], call["arguments"])
+            outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call["call_id"],
+                    "output": json.dumps(result, sort_keys=True),
+                }
+            )
+        response = client.responses.create(
+            model=config.model,
+            reasoning={"effort": effort},
+            tools=_tool_definitions(),
+            previous_response_id=getattr(response, "id", None),
+            input=outputs,
+        )
+    else:
+        raise RuntimeError(f"OpenAI exploration exceeded max tool turns: {config.max_tool_turns}")
+
+    author_response = client.responses.create(
+        model=config.model,
+        reasoning={"effort": effort},
+        previous_response_id=getattr(response, "id", None),
+        input=[
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "instructions": _agent_author_prompt(),
+                        "notes": getattr(session, "notes", {}),
+                        "tool_trace": getattr(session, "trace", []),
+                    },
+                    sort_keys=True,
+                ),
+            }
+        ],
+    )
+    code = _extract_output_text(author_response)
     validate_generated_playwright(code)
     return code
 
@@ -100,6 +185,92 @@ def _system_prompt() -> str:
         "contracts. Avoid login, checkout, account, cart, personalized, tracking, "
         "or destructive flows. Keep assertions meaningful and bounded."
     )
+
+
+def _agent_explore_prompt() -> str:
+    return (
+        "You are a senior QA automation agent with browser tools. Explore the site thoroughly "
+        "in one bounded pass. Use note(key, value) to organize observations before authoring. "
+        "Verify selectors before you plan to use them. Do not generate Python yet. Avoid login, "
+        "checkout, payment, account, destructive, personalized, or tracking flows. When done, "
+        "respond with DONE_EXPLORING."
+    )
+
+
+def _agent_author_prompt() -> str:
+    return (
+        "Using only the accumulated notes and tool trace, emit the final Python Playwright pytest "
+        "file. Return only Python code. Import only `from playwright.sync_api import Page, expect`. "
+        "Do not import model SDKs, os, requests, httpx, or read files/env at runtime. For every "
+        "input field covered, bake deterministic literal values directly into the tests, covering "
+        "happy path, boundary, and invalid cases where applicable."
+    )
+
+
+def _tool_definitions() -> list[dict[str, object]]:
+    return [
+        _tool("navigate", "Navigate the persistent page to a same-origin URL.", {"url": "string"}),
+        _tool("list_links", "Return same-origin links from the current page.", {}),
+        _tool("link_status", "Return HTTP status for a same-origin URL without page navigation.", {"url": "string"}),
+        _tool("get_dom", "Return bounded current-page HTML.", {"limit": "integer"}),
+        _tool("get_accessible_tree", "Return bounded accessible and interactive page nodes.", {}),
+        _tool("query", "Return count and sample text for a CSS selector.", {"selector": "string"}),
+        _tool("verify_selector", "Verify count and visibility for a CSS selector.", {"selector": "string"}),
+        _tool("screenshot", "Save a named full-page screenshot baseline.", {"name": "string"}),
+        _tool("note", "Store structured scratchpad notes for final authoring.", {"key": "string", "value": "string"}),
+    ]
+
+
+def _tool(name: str, description: str, properties: dict[str, str]) -> dict[str, object]:
+    schema_properties = {
+        key: {"type": value}
+        for key, value in properties.items()
+    }
+    return {
+        "type": "function",
+        "name": name,
+        "description": description,
+        "parameters": {
+            "type": "object",
+            "properties": schema_properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        },
+    }
+
+
+def _extract_tool_calls(response: Any) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+    for item in getattr(response, "output", []) or []:
+        if getattr(item, "type", None) != "function_call":
+            continue
+        raw_arguments = getattr(item, "arguments", "{}") or "{}"
+        calls.append(
+            {
+                "name": getattr(item, "name"),
+                "arguments": json.loads(raw_arguments),
+                "call_id": getattr(item, "call_id"),
+            }
+        )
+    return calls
+
+
+def _dispatch_tool_call(session: Any, name: str, arguments: dict[str, object]) -> dict[str, object]:
+    allowed = {
+        "navigate",
+        "list_links",
+        "link_status",
+        "get_dom",
+        "get_accessible_tree",
+        "query",
+        "verify_selector",
+        "screenshot",
+        "note",
+    }
+    if name not in allowed:
+        raise ValueError(f"Unsupported OpenAI tool call: {name}")
+    method = getattr(session, name)
+    return method(**arguments)
 
 
 def _extract_output_text(response: Any) -> str:

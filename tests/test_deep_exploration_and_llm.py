@@ -239,6 +239,73 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertIn("Search", serialized_input)
         validate_generated_playwright(code)
 
+    def test_openai_agent_generation_uses_tools_before_authoring_tests(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
+
+        class FakeCall:
+            type = "function_call"
+
+            def __init__(self, name: str, arguments: str, call_id: str):
+                self.name = name
+                self.arguments = arguments
+                self.call_id = call_id
+
+        class FakeResponse:
+            def __init__(self, response_id: str, output=None, output_text=""):
+                self.id = response_id
+                self.output = output or []
+                self.output_text = output_text
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+                self.responses = [
+                    FakeResponse("r1", output=[FakeCall("get_dom", '{"limit": 100}', "call_1")]),
+                    FakeResponse("r2", output_text="DONE_EXPLORING"),
+                    FakeResponse(
+                        "r3",
+                        output_text=(
+                            "from playwright.sync_api import Page, expect\n\n"
+                            "def test_agent_written_contract(page: Page):\n"
+                            "    page.goto('https://example.com/')\n"
+                            "    expect(page).to_have_url('https://example.com/')\n"
+                        ),
+                    ),
+                ]
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return self.responses.pop(0)
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        class FakeSession:
+            notes = {"static_content": ["Example Domain heading exists."]}
+            trace = []
+
+            def get_dom(self, limit=20_000):
+                self.trace.append({"tool": "get_dom"})
+                return {"html": "<h1>Example Domain</h1>", "truncated": False}
+
+        client = FakeClient()
+        code = generate_tests_with_openai_agent(
+            start_url="https://example.com/",
+            session=FakeSession(),
+            config=OpenAIGenerationConfig(api_key="test-key", model="gpt-5.5"),
+            client=client,
+        )
+
+        self.assertIn("def test_agent_written_contract", code)
+        self.assertIn("tools", client.responses.calls[0])
+        self.assertEqual(client.responses.calls[1]["previous_response_id"], "r1")
+        self.assertEqual(client.responses.calls[2]["previous_response_id"], "r2")
+        function_output = client.responses.calls[1]["input"][0]
+        self.assertEqual(function_output["type"], "function_call_output")
+        self.assertIn("Example Domain", function_output["output"])
+        validate_generated_playwright(code)
+
     def test_openai_generation_requires_api_key_before_client_creation(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
 
