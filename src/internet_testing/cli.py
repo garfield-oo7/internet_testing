@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 from pathlib import Path
 
@@ -181,10 +182,15 @@ def _generate_openai_agent_from_url(
                 screenshot_dir=screenshot_dir,
                 timeout_ms=timeout_ms,
                 caps=caps,
+                trace_callback=_print_tool_trace,
             )
             return generate_tests_with_openai_agent(url, session=session, config=config)
         finally:
             browser.close()
+
+
+def _print_tool_trace(event: dict[str, str]) -> None:
+    print("TOOL " + json.dumps(event, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":

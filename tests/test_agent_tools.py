@@ -186,6 +186,18 @@ class AgentToolSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "same origin"):
             session.link_status("https://other.test/")
 
+    def test_trace_callback_receives_each_tool_event(self):
+        events = []
+        session = AgentToolSession(
+            page=FakePage(),
+            start_url="https://example.com/",
+            trace_callback=events.append,
+        )
+
+        session.verify_selector("h1")
+
+        self.assertEqual(events, [{"tool": "verify_selector", "selector": "h1"}])
+
 
 if __name__ == "__main__":
     unittest.main()

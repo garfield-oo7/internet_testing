@@ -28,6 +28,7 @@ class AgentToolSession:
     caps: AgentToolCaps = field(default_factory=AgentToolCaps)
     time_provider: Any = time.monotonic
     status_fetcher: Any | None = None
+    trace_callback: Any | None = None
     notes: dict[str, list[str]] = field(default_factory=dict)
     trace: list[dict[str, str]] = field(default_factory=list)
     visited_urls: set[str] = field(default_factory=set)
@@ -134,6 +135,8 @@ class AgentToolSession:
         if "name" in result:
             event["name"] = str(result["name"])
         self.trace.append(event)
+        if self.trace_callback is not None:
+            self.trace_callback(dict(event))
         return result
 
 

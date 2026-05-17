@@ -2,6 +2,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -384,6 +385,15 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
             self.assertEqual(generate.call_args.kwargs["caps"].max_tool_calls, 7)
             self.assertEqual(generate.call_args.kwargs["caps"].max_distinct_urls, 3)
             self.assertEqual(generate.call_args.kwargs["caps"].max_wall_seconds, 12)
+
+    def test_cli_tool_trace_output_is_structured_for_web_logs(self):
+        from internet_testing.cli import _print_tool_trace
+
+        output = StringIO()
+        with patch("sys.stdout", output):
+            _print_tool_trace({"tool": "verify_selector", "selector": "h1"})
+
+        self.assertEqual(output.getvalue(), 'TOOL {"selector": "h1", "tool": "verify_selector"}\n')
 
 
 if __name__ == "__main__":
