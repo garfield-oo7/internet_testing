@@ -307,6 +307,55 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertIn("Example Domain", function_output["output"])
         validate_generated_playwright(code)
 
+    def test_openai_agent_generation_validates_screenshot_against_session_baseline(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
+
+        class FakeResponse:
+            def __init__(self, response_id: str, output_text: str):
+                self.id = response_id
+                self.output = []
+                self.output_text = output_text
+
+        class FakeResponses:
+            def __init__(self):
+                self.responses = [
+                    FakeResponse("r1", "DONE_EXPLORING"),
+                    FakeResponse(
+                        "r2",
+                        "from playwright.sync_api import Page, expect\n\n"
+                        "def test_visual_contract(page: Page):\n"
+                        "    page.goto('https://example.com/')\n"
+                        "    expect(page).to_have_screenshot('home.png')\n",
+                    ),
+                ]
+
+            def create(self, **kwargs):
+                return self.responses.pop(0)
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        class FakeSession:
+            notes = {}
+            trace = []
+
+            def __init__(self, screenshot_dir: Path):
+                self.screenshot_dir = screenshot_dir
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            screenshot_dir = Path(tmpdir)
+            (screenshot_dir / "home.png").write_bytes(b"fake-png")
+
+            code = generate_tests_with_openai_agent(
+                start_url="https://example.com/",
+                session=FakeSession(screenshot_dir),
+                config=OpenAIGenerationConfig(api_key="test-key"),
+                client=FakeClient(),
+            )
+
+        self.assertIn("to_have_screenshot", code)
+
     def test_openai_generation_requires_api_key_before_client_creation(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
 

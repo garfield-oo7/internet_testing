@@ -135,7 +135,7 @@ def generate_tests_with_openai_agent(
         ],
     )
     code = _extract_output_text(author_response)
-    validate_generated_playwright(code)
+    validate_generated_playwright(code, baseline_dir=getattr(session, "screenshot_dir", None))
     return code
 
 
