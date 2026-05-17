@@ -26,16 +26,37 @@ For a detailed architecture write-up, see
 
 ## Setup
 
-Use the active `internet_testing` Python environment with `uv`:
+Recommended setup uses the active `internet_testing` Python environment with
+`uv`:
 
 ```bash
 uv sync --active
 ```
 
-For live crawling or running generated Playwright tests, install a browser once:
+Alternatively, create and activate a virtual environment with standard Python
+tools, then install from `requirements.txt`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+The `requirements.txt` file is exported from `uv.lock` and includes the local
+package in editable mode, so the `internet-testing` and `internet-testing-web`
+commands are installed in the virtual environment.
+
+For live crawling or running generated Playwright tests, install a browser once.
+With `uv`:
 
 ```bash
 uv run --active playwright install chromium
+```
+
+With the pip virtual environment:
+
+```bash
+python -m playwright install chromium
 ```
 
 ## Run the Web Application
