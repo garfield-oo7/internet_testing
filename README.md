@@ -76,8 +76,8 @@ http://127.0.0.1:8765
 In the web UI:
 
 1. Paste a full website URL, for example `https://www.flipkart.com/`.
-2. Set `Max pages` and `Max depth` to control how much of the site is explored.
-3. Optionally enable OpenAI generation or enter an LLM command for the generation phase.
+2. Set crawl limits for deterministic generation, or agent limits for OpenAI generation.
+3. Optionally enable OpenAI generation or enter an external LLM command for the generation phase.
 4. Click `Run website test`.
 5. Watch the generation and pytest logs in the same page.
 
@@ -125,16 +125,21 @@ Then run:
 ```bash
 uv run --active internet-testing \
   https://example.com/ \
-  --max-pages 1 \
-  --max-depth 0 \
   --openai \
   --openai-model gpt-5.5 \
+  --agent-max-tool-calls 40 \
+  --agent-max-urls 8 \
+  --agent-max-seconds 120 \
   --output generated_playwright_tests.py
 ```
 
-The default OpenAI model is `gpt-5.5`, based on the OpenAI API docs guidance
-that recommends it for complex reasoning and coding. The generated Playwright
-file is validated and then can be run with pytest without calling OpenAI.
+For live URLs with `--openai`, the model drives a persistent Playwright page via
+bounded tools such as `navigate`, `get_dom`, `get_accessible_tree`, `query`,
+`verify_selector`, `link_status`, `screenshot`, and `note`. Tool calls are
+printed as `TOOL {...}` trace lines. The default OpenAI model is `gpt-5.5`,
+based on the OpenAI API docs guidance that recommends it for complex reasoning
+and coding. The generated Playwright file is validated and then can be run with
+pytest without calling OpenAI.
 
 From saved HTML fixtures, which is useful for repeatable verification:
 

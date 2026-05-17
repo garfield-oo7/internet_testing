@@ -155,6 +155,14 @@ for complex reasoning and coding, and state that latest models are available via
 the Responses API and client SDKs. The model can be overridden with
 `--openai-model`.
 
+For live URLs, `--openai` bypasses the deterministic `_crawl_urls` path. Instead,
+it opens one Chromium context, navigates to the start URL, and gives the model a
+bounded `AgentToolSession`. The tool set includes navigation, same-origin link
+listing, HTTP status checks without navigation, bounded DOM capture,
+accessibility-oriented node capture, selector queries, selector verification,
+screenshot capture, and structured notes. The authoring phase then uses the
+notes and tool trace to emit the final Python file.
+
 Both paths keep a hard separation between the model-assisted generation phase
 and the deterministic execution phase.
 
@@ -176,9 +184,11 @@ local operator UI, not a multi-user service. Keeping it in-process makes the
 system easier to inspect and keeps dependencies small.
 
 The UI has one form for URL, crawl depth, page limit, OpenAI generation options,
-and optional LLM command. When a run starts, the server creates a run record,
-starts a background worker, and streams subprocess output into an in-memory log
-buffer. The browser polls `GET /api/runs/:id` to show status and logs.
+agent bounds, and optional LLM command. When a run starts, the server creates a
+run record, starts a background worker, and streams subprocess output into an
+in-memory log buffer. The browser polls `GET /api/runs/:id` to show status and
+logs. OpenAI agent tool calls are emitted as `TOOL {...}` trace lines so the web
+logs show what the model inspected and verified.
 
 This design favors transparency over sophistication. The logs show the exact
 generation command and the exact pytest command, making it clear where the LLM
@@ -224,14 +234,15 @@ Frontend evidence:
 - the `internet-testing-web` script in `pyproject.toml`
 
 The web tests assert that generation can include `--openai` or `--llm-command`
-while pytest execution does not. A Playwright smoke check also loaded the local
-web page and verified the form and "No LLM during pytest" status badge.
+plus agent bounds while pytest execution does not. A Playwright smoke check also
+loaded the local web page and verified the form and "No LLM during pytest"
+status badge.
 
 ## Known Limitations
 
-The crawler mostly explores links. It does not yet perform deeper deterministic
-interactions such as typing into search boxes, selecting filters, opening menus,
-scrolling infinite lists, handling location prompts, or dismissing overlays.
+The deterministic crawler mostly explores links. The OpenAI agent path can use
+browser tools for deeper inspection, but it is still bounded and should avoid
+login, checkout, payment, destructive, and personalized flows.
 
 The analyzer is heuristic. It can produce weak assertions if a site exposes
 unstable accessible labels or hides elements differently between capture and
