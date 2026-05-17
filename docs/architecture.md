@@ -144,18 +144,26 @@ useful navigation, search, category, and product-surface assertions.
 
 ### LLM Isolation
 
-The application does not embed a specific model SDK. Instead, `--llm-command`
-lets any external generator read structured DOM evidence from stdin and write a
-Python Playwright test file to stdout.
+The application supports two model-assisted generation paths:
 
-This keeps the tool provider-agnostic. It also creates a hard separation between
-the model-assisted generation phase and the deterministic execution phase.
+1. `--openai`, which uses the OpenAI Responses API during generation.
+2. `--llm-command`, which lets any external generator read structured DOM
+   evidence from stdin and write a Python Playwright test file to stdout.
+
+The OpenAI path defaults to `gpt-5.5`, because the OpenAI API docs recommend it
+for complex reasoning and coding, and state that latest models are available via
+the Responses API and client SDKs. The model can be overridden with
+`--openai-model`.
+
+Both paths keep a hard separation between the model-assisted generation phase
+and the deterministic execution phase.
 
 The web console preserves the same boundary. Its form accepts an optional LLM
-command, but `webapp.py` builds two separate subprocess commands:
+command or OpenAI generation setting, but `webapp.py` builds two separate
+subprocess commands:
 
-1. a generation command that may include `--llm-command`
-2. a pytest execution command that never includes the LLM command
+1. a generation command that may include `--openai` or `--llm-command`
+2. a pytest execution command that never includes OpenAI or LLM command flags
 
 This means a user can trigger model-assisted test authoring from the browser
 without changing the rule that tests run without LLM usage.
@@ -167,10 +175,10 @@ The web console is intentionally implemented with Python's standard
 local operator UI, not a multi-user service. Keeping it in-process makes the
 system easier to inspect and keeps dependencies small.
 
-The UI has one form for URL, crawl depth, page limit, and optional LLM command.
-When a run starts, the server creates a run record, starts a background worker,
-and streams subprocess output into an in-memory log buffer. The browser polls
-`GET /api/runs/:id` to show status and logs.
+The UI has one form for URL, crawl depth, page limit, OpenAI generation options,
+and optional LLM command. When a run starts, the server creates a run record,
+starts a background worker, and streams subprocess output into an in-memory log
+buffer. The browser polls `GET /api/runs/:id` to show status and logs.
 
 This design favors transparency over sophistication. The logs show the exact
 generation command and the exact pytest command, making it clear where the LLM
@@ -215,9 +223,9 @@ Frontend evidence:
 - `tests/test_webapp.py`
 - the `internet-testing-web` script in `pyproject.toml`
 
-The web tests assert that generation can include `--llm-command` while pytest
-execution does not. A Playwright smoke check also loaded the local web page and
-verified the form and "No LLM during pytest" status badge.
+The web tests assert that generation can include `--openai` or `--llm-command`
+while pytest execution does not. A Playwright smoke check also loaded the local
+web page and verified the form and "No LLM during pytest" status badge.
 
 ## Known Limitations
 

@@ -77,12 +77,13 @@ In the web UI:
 
 1. Paste a full website URL, for example `https://www.flipkart.com/`.
 2. Set `Max pages` and `Max depth` to control how much of the site is explored.
-3. Optionally enter an LLM command for the generation phase.
+3. Optionally enable OpenAI generation or enter an LLM command for the generation phase.
 4. Click `Run website test`.
 5. Watch the generation and pytest logs in the same page.
 
-The LLM command is only used to generate the test file. The pytest command that
-runs the generated test file is separate and does not receive the LLM command.
+OpenAI and LLM commands are only used to generate the test file. The pytest
+command that runs the generated test file is separate and does not receive the
+OpenAI configuration or LLM command.
 
 ## Run From the CLI
 
@@ -111,6 +112,29 @@ uv run --active internet-testing \
 ```
 
 The CLI validates the model output before writing it.
+
+To use OpenAI during generation, set `OPENAI_API_KEY` in the environment or a
+local `.env` file:
+
+```bash
+OPENAI_API_KEY=sk-...
+```
+
+Then run:
+
+```bash
+uv run --active internet-testing \
+  https://example.com/ \
+  --max-pages 1 \
+  --max-depth 0 \
+  --openai \
+  --openai-model gpt-5.5 \
+  --output generated_playwright_tests.py
+```
+
+The default OpenAI model is `gpt-5.5`, based on the OpenAI API docs guidance
+that recommends it for complex reasoning and coding. The generated Playwright
+file is validated and then can be run with pytest without calling OpenAI.
 
 From saved HTML fixtures, which is useful for repeatable verification:
 
