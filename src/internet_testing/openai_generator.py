@@ -92,6 +92,7 @@ def generate_tests_with_openai_agent(
         ],
     )
 
+    chain_author_to_response = True
     for _ in range(config.max_tool_turns):
         calls = _extract_tool_calls(response)
         if not calls:
@@ -143,15 +144,15 @@ def generate_tests_with_openai_agent(
             input=outputs,
         )
         if budget_exhausted:
+            chain_author_to_response = False
             break
     else:
         raise RuntimeError(f"OpenAI exploration exceeded max tool turns: {config.max_tool_turns}")
 
-    author_response = client.responses.create(
-        model=config.model,
-        reasoning={"effort": effort},
-        previous_response_id=getattr(response, "id", None),
-        input=[
+    author_request = {
+        "model": config.model,
+        "reasoning": {"effort": effort},
+        "input": [
             {
                 "role": "user",
                 "content": json.dumps(
@@ -164,7 +165,11 @@ def generate_tests_with_openai_agent(
                 ),
             }
         ],
-    )
+    }
+    if chain_author_to_response:
+        author_request["previous_response_id"] = getattr(response, "id", None)
+
+    author_response = client.responses.create(**author_request)
     code = _extract_output_text(author_response)
     validate_generated_playwright(code, baseline_dir=getattr(session, "screenshot_dir", None))
     return code

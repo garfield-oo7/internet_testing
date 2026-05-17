@@ -392,7 +392,7 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
                 self.calls = []
                 self.responses = [
                     FakeResponse("r1", output=[FakeCall()]),
-                    FakeResponse("r2", output_text="DONE_EXPLORING"),
+                    FakeResponse("r2", output=[FakeCall()]),
                     FakeResponse(
                         "r3",
                         output_text=(
@@ -434,6 +434,7 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertEqual(tool_output["type"], "function_call_output")
         self.assertIn("Agent tool call limit reached: 1", tool_output["output"])
         self.assertNotIn("tools", client.responses.calls[2])
+        self.assertNotIn("previous_response_id", client.responses.calls[2])
         author_payload = client.responses.calls[2]["input"][0]["content"]
         self.assertIn("exploration_stop_reason", author_payload)
         self.assertIn("Agent tool call limit reached: 1", author_payload)
