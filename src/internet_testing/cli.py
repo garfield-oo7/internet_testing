@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=["none", "low", "medium", "high", "xhigh"],
         help=f"OpenAI reasoning effort for test generation. Defaults to {DEFAULT_REASONING_EFFORT}.",
     )
+    parser.add_argument("--openai-max-tool-turns", type=int, default=12)
     args = parser.parse_args(argv)
     if args.openai and args.llm_command:
         parser.error("use either --openai or --llm-command, not both")
@@ -67,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     config = OpenAIGenerationConfig(
         model=args.openai_model,
         reasoning_effort=args.openai_reasoning_effort,
+        max_tool_turns=args.openai_max_tool_turns,
     )
     caps = AgentToolCaps(
         max_tool_calls=args.agent_max_tool_calls,

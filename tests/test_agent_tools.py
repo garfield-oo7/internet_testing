@@ -88,6 +88,17 @@ class AgentToolSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "same origin"):
             session.navigate("https://other.test/")
 
+    def test_navigation_blocks_cart_checkout_and_account_paths(self):
+        page = FakePage()
+        session = AgentToolSession(page=page, start_url="https://example.com/")
+
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            session.navigate("https://example.com/viewcart?marketplace=TEST")
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            session.navigate("https://example.com/checkout")
+
+        self.assertEqual(page.navigated, [])
+
     def test_dom_and_link_tools_return_bounded_same_origin_evidence(self):
         page = FakePage()
         session = AgentToolSession(page=page, start_url="https://example.com/")

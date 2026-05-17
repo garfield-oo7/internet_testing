@@ -421,6 +421,8 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
                             "3",
                             "--agent-max-seconds",
                             "12",
+                            "--openai-max-tool-turns",
+                            "22",
                             "--output",
                             str(output),
                         ]
@@ -434,6 +436,7 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
             self.assertEqual(generate.call_args.kwargs["caps"].max_tool_calls, 7)
             self.assertEqual(generate.call_args.kwargs["caps"].max_distinct_urls, 3)
             self.assertEqual(generate.call_args.kwargs["caps"].max_wall_seconds, 12)
+            self.assertEqual(generate.call_args.kwargs["config"].max_tool_turns, 22)
 
     def test_cli_tool_trace_output_is_structured_for_web_logs(self):
         from internet_testing.cli import _print_tool_trace

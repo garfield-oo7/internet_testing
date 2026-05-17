@@ -123,6 +123,11 @@ class AgentToolSession:
     def _require_same_origin(self, url: str) -> None:
         if _origin(url) != self._origin:
             raise ValueError(f"Agent tools may only navigate same origin as {self.start_url}")
+        parsed = urlparse(url)
+        lowered = url.lower()
+        unsafe_terms = ("/account", "/login", "/signin", "/cart", "/viewcart", "/checkout", "/payment")
+        if any(term in parsed.path.lower() for term in unsafe_terms) or "cart" in lowered:
+            raise ValueError(f"Agent tools may not navigate unsafe commerce/auth path: {url}")
 
     def _record(self, tool: str, result: dict[str, object]) -> dict[str, object]:
         event = {"tool": tool}
