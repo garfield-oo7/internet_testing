@@ -191,9 +191,10 @@ def _agent_explore_prompt() -> str:
     return (
         "You are a senior QA automation agent with browser tools. Explore the site thoroughly "
         "in one bounded pass. Use note(key, value) to organize observations before authoring. "
-        "Verify selectors before you plan to use them. Do not generate Python yet. Avoid login, "
-        "checkout, payment, account, destructive, personalized, or tracking flows. When done, "
-        "respond with DONE_EXPLORING."
+        "Use verify_selector(selector) before you plan to use any selector in final test code. "
+        "For each interactive element or input field, note candidate deterministic test variants. "
+        "Do not generate Python yet. Avoid login, checkout, payment, account, destructive, "
+        "personalized, or tracking flows. When done, respond with DONE_EXPLORING."
     )
 
 
@@ -202,8 +203,9 @@ def _agent_author_prompt() -> str:
         "Using only the accumulated notes and tool trace, emit the final Python Playwright pytest "
         "file. Return only Python code. Import only `from playwright.sync_api import Page, expect`. "
         "Do not import model SDKs, os, requests, httpx, or read files/env at runtime. For every "
-        "input field covered, bake deterministic literal values directly into the tests, covering "
-        "happy path, boundary, and invalid cases where applicable."
+        "input field covered, emit 2-4 test functions or a pytest parametrize block with "
+        "deterministic literal values baked directly into the tests, covering happy path, "
+        "boundary, and invalid cases where applicable."
     )
 
 

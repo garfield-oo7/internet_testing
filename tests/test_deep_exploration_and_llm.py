@@ -444,6 +444,20 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
 
         self.assertEqual(output.getvalue(), 'TOOL {"selector": "h1", "tool": "verify_selector"}\n')
 
+    def test_openai_agent_prompts_require_selector_verification_and_literal_variants(self):
+        from internet_testing.openai_generator import _agent_author_prompt, _agent_explore_prompt
+
+        explore = _agent_explore_prompt()
+        author = _agent_author_prompt()
+
+        self.assertIn("verify_selector", explore)
+        self.assertIn("note(key, value)", explore)
+        self.assertIn("2-4", author)
+        self.assertIn("literal", author)
+        self.assertIn("happy path", author)
+        self.assertIn("boundary", author)
+        self.assertIn("invalid", author)
+
 
 if __name__ == "__main__":
     unittest.main()
