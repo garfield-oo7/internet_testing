@@ -50,8 +50,13 @@ def generate_tests_with_openai(
             },
         ],
     )
-    code = _extract_output_text(response)
-    validate_generated_playwright(code)
+    code = _validated_or_repaired_code(
+        client=client,
+        response=response,
+        code=_extract_output_text(response),
+        config=config,
+        effort=effort,
+    )
     return code
 
 
@@ -170,9 +175,55 @@ def generate_tests_with_openai_agent(
         author_request["previous_response_id"] = getattr(response, "id", None)
 
     author_response = client.responses.create(**author_request)
-    code = _extract_output_text(author_response)
-    validate_generated_playwright(code, baseline_dir=getattr(session, "screenshot_dir", None))
+    code = _validated_or_repaired_code(
+        client=client,
+        response=author_response,
+        code=_extract_output_text(author_response),
+        config=config,
+        effort=effort,
+        baseline_dir=getattr(session, "screenshot_dir", None),
+    )
     return code
+
+
+def _validated_or_repaired_code(
+    *,
+    client: Any,
+    response: Any,
+    code: str,
+    config: OpenAIGenerationConfig,
+    effort: str,
+    baseline_dir: Path | None = None,
+) -> str:
+    try:
+        validate_generated_playwright(code, baseline_dir=baseline_dir)
+        return code
+    except ValueError as exc:
+        repair_response = client.responses.create(
+            model=config.model,
+            reasoning={"effort": effort},
+            previous_response_id=getattr(response, "id", None),
+            input=[
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "instructions": (
+                                "Repair the generated Python Playwright pytest file so it passes "
+                                "the local validator. Return only complete Python code. Keep all "
+                                "test inputs as literal strings and keep the single allowed import."
+                            ),
+                            "validation_error": str(exc),
+                            "rejected_code": code,
+                        },
+                        sort_keys=True,
+                    ),
+                }
+            ],
+        )
+    repaired_code = _extract_output_text(repair_response)
+    validate_generated_playwright(repaired_code, baseline_dir=baseline_dir)
+    return repaired_code
 
 
 def _create_openai_client(api_key: str):

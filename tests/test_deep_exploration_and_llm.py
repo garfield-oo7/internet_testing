@@ -501,6 +501,63 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertEqual(tool_output["type"], "function_call_output")
         self.assertIn("unsafe commerce/auth path", tool_output["output"])
 
+    def test_openai_agent_generation_repairs_generated_code_that_fails_validation(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
+
+        class FakeResponse:
+            def __init__(self, response_id: str, output_text: str):
+                self.id = response_id
+                self.output = []
+                self.output_text = output_text
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+                self.responses = [
+                    FakeResponse("r1", "DONE_EXPLORING"),
+                    FakeResponse(
+                        "r2",
+                        "from playwright.sync_api import Page, expect\n\n"
+                        "def test_invalid_fill_value(page: Page):\n"
+                        "    term = 'policy'\n"
+                        "    page.goto('https://example.com/')\n"
+                        "    page.locator('#search').fill(term)\n",
+                    ),
+                    FakeResponse(
+                        "r3",
+                        "from playwright.sync_api import Page, expect\n\n"
+                        "def test_repaired_fill_value(page: Page):\n"
+                        "    page.goto('https://example.com/')\n"
+                        "    page.locator('#search').fill('policy')\n",
+                    ),
+                ]
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return self.responses.pop(0)
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        class FakeSession:
+            notes = {"search": ["#search was observed."]}
+            trace = []
+
+        client = FakeClient()
+        code = generate_tests_with_openai_agent(
+            start_url="https://example.com/",
+            session=FakeSession(),
+            config=OpenAIGenerationConfig(api_key="test-key"),
+            client=client,
+        )
+
+        self.assertIn("def test_repaired_fill_value", code)
+        self.assertEqual(len(client.responses.calls), 3)
+        repair_payload = client.responses.calls[2]["input"][0]["content"]
+        self.assertIn("fill() arguments must be string literals", repair_payload)
+        self.assertIn("term = 'policy'", repair_payload)
+
     def test_openai_generation_requires_api_key_before_client_creation(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
 
