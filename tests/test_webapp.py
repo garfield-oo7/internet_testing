@@ -32,6 +32,9 @@ class WebAppTests(unittest.TestCase):
             use_openai=True,
             openai_model="gpt-5.5",
             openai_reasoning_effort="medium",
+            agent_max_tool_calls=9,
+            agent_max_urls=4,
+            agent_max_seconds=30,
         )
 
         generation, execution = build_run_commands(config, Path("/tmp/run/test_generated.py"))
@@ -40,10 +43,17 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("--openai-model", generation)
         self.assertIn("gpt-5.5", generation)
         self.assertIn("--openai-reasoning-effort", generation)
+        self.assertIn("--agent-max-tool-calls", generation)
+        self.assertIn("9", generation)
+        self.assertIn("--agent-max-urls", generation)
+        self.assertIn("4", generation)
+        self.assertIn("--agent-max-seconds", generation)
+        self.assertIn("30", generation)
         self.assertEqual(generation[:3], [sys.executable, "-m", "internet_testing.cli"])
         self.assertEqual(execution[:3], [sys.executable, "-m", "pytest"])
         self.assertNotIn("--openai", execution)
         self.assertNotIn("--openai-model", execution)
+        self.assertNotIn("--agent-max-tool-calls", execution)
 
     def test_create_run_stores_initial_log_and_output_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:

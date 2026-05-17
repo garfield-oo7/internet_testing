@@ -24,6 +24,9 @@ class RunConfig:
     use_openai: bool = False
     openai_model: str = DEFAULT_OPENAI_MODEL
     openai_reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    agent_max_tool_calls: int = 40
+    agent_max_urls: int = 8
+    agent_max_seconds: float = 120.0
 
 
 @dataclass
@@ -64,6 +67,12 @@ def build_run_commands(config: RunConfig, output_path: Path) -> tuple[list[str],
                 config.openai_model,
                 "--openai-reasoning-effort",
                 config.openai_reasoning_effort,
+                "--agent-max-tool-calls",
+                str(config.agent_max_tool_calls),
+                "--agent-max-urls",
+                str(config.agent_max_urls),
+                "--agent-max-seconds",
+                str(config.agent_max_seconds),
             ]
         )
 
@@ -234,6 +243,9 @@ def _config_from_payload(payload: dict[str, Any]) -> RunConfig:
         str(payload.get("openai_reasoning_effort", DEFAULT_REASONING_EFFORT)).strip()
         or DEFAULT_REASONING_EFFORT
     )
+    agent_max_tool_calls = _bounded_int(payload.get("agent_max_tool_calls", 40), minimum=1, maximum=200)
+    agent_max_urls = _bounded_int(payload.get("agent_max_urls", 8), minimum=1, maximum=50)
+    agent_max_seconds = float(_bounded_int(payload.get("agent_max_seconds", 120), minimum=5, maximum=1800))
     return RunConfig(
         url=url,
         max_pages=max_pages,
@@ -242,6 +254,9 @@ def _config_from_payload(payload: dict[str, Any]) -> RunConfig:
         use_openai=use_openai,
         openai_model=openai_model,
         openai_reasoning_effort=openai_reasoning_effort,
+        agent_max_tool_calls=agent_max_tool_calls,
+        agent_max_urls=agent_max_urls,
+        agent_max_seconds=agent_max_seconds,
     )
 
 
@@ -483,6 +498,20 @@ INDEX_HTML = """<!doctype html>
             <input id="max_depth" name="max_depth" type="number" min="0" max="3" value="1">
           </label>
         </div>
+        <div class="row">
+          <label>
+            Agent tool calls
+            <input id="agent_max_tool_calls" name="agent_max_tool_calls" type="number" min="1" max="200" value="40">
+          </label>
+          <label>
+            Agent URLs
+            <input id="agent_max_urls" name="agent_max_urls" type="number" min="1" max="50" value="8">
+          </label>
+        </div>
+        <label>
+          Agent seconds
+          <input id="agent_max_seconds" name="agent_max_seconds" type="number" min="5" max="1800" value="120">
+        </label>
         <label>
           LLM command for generation
           <input id="llm_command" name="llm_command" placeholder="python scripts/write_tests_with_model.py">
@@ -540,7 +569,10 @@ INDEX_HTML = """<!doctype html>
         llm_command: form.llm_command.value,
         use_openai: form.use_openai.checked,
         openai_model: form.openai_model.value,
-        openai_reasoning_effort: form.openai_reasoning_effort.value
+        openai_reasoning_effort: form.openai_reasoning_effort.value,
+        agent_max_tool_calls: form.agent_max_tool_calls.value,
+        agent_max_urls: form.agent_max_urls.value,
+        agent_max_seconds: form.agent_max_seconds.value
       };
 
       const response = await fetch("/api/runs", {
