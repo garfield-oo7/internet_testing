@@ -7,6 +7,10 @@ from real websites and turns that evidence into Python Playwright tests. The
 generation step can use an external model command, but the generated test files
 are plain Playwright tests and run without any model dependency.
 
+The tool has two entry points: a command-line interface for automation and a
+local web console for interactive runs. Both use the same generation and pytest
+execution pipeline.
+
 The core workflow is:
 
 1. Explore a website URL with Playwright.
@@ -14,12 +18,22 @@ The core workflow is:
 3. Extract stable DOM evidence from each captured page.
 4. Generate Python Playwright tests from that evidence.
 5. Validate and run the generated tests without an LLM.
+6. Surface the run logs either in the terminal or in the web UI.
 
 ## System Diagram
 
 ```mermaid
 flowchart TD
-    CLI["CLI\ninternet-testing"] --> Inputs{"Input Mode"}
+    User["User"] --> WebUI["Web Console\ninternet-testing-web"]
+    User --> CLI["CLI\ninternet-testing"]
+
+    WebUI --> WebAPI["Local HTTP API\nPOST /api/runs\nGET /api/runs/:id"]
+    WebAPI --> RunState["In-memory run state\nstatus + logs + output path"]
+    WebAPI --> Worker["Background run worker"]
+    Worker --> Pipeline["Shared test pipeline"]
+    CLI --> Pipeline
+
+    Pipeline --> Inputs{"Input Mode"}
     Inputs --> LiveURL["Live URLs"]
     Inputs --> Fixtures["Saved HTML fixtures"]
 
@@ -45,6 +59,9 @@ flowchart TD
     TestFile --> Pytest["pytest-playwright"]
     Pytest --> Browser["Chromium"]
     Browser --> Result["Pass/fail result\nNo LLM at runtime"]
+    Result --> Logs["Execution logs"]
+    Logs --> RunState
+    RunState --> WebUI
 ```
 
 ## Module Responsibilities
@@ -53,6 +70,12 @@ flowchart TD
 saved fixture HTML, crawl limits, output paths, and the optional `--llm-command`.
 It is deliberately thin: it coordinates crawling, generation, validation, and
 file output without owning selector or crawling policy.
+
+`src/internet_testing/webapp.py` is the local web console. It serves a single
+HTML page, exposes a small JSON API for starting runs and polling run state, and
+executes the existing CLI and pytest commands in a background thread. The web
+layer does not reimplement crawling, generation, or test execution. It is an
+operator surface over the same command pipeline.
 
 `src/internet_testing/explorer.py` implements deterministic exploration. It uses
 a bounded breadth-first search over same-origin links, controlled by
@@ -128,6 +151,31 @@ Python Playwright test file to stdout.
 This keeps the tool provider-agnostic. It also creates a hard separation between
 the model-assisted generation phase and the deterministic execution phase.
 
+The web console preserves the same boundary. Its form accepts an optional LLM
+command, but `webapp.py` builds two separate subprocess commands:
+
+1. a generation command that may include `--llm-command`
+2. a pytest execution command that never includes the LLM command
+
+This means a user can trigger model-assisted test authoring from the browser
+without changing the rule that tests run without LLM usage.
+
+### Web Console as a Thin Orchestration Layer
+
+The web console is intentionally implemented with Python's standard
+`http.server` rather than a larger web framework. The current requirement is a
+local operator UI, not a multi-user service. Keeping it in-process makes the
+system easier to inspect and keeps dependencies small.
+
+The UI has one form for URL, crawl depth, page limit, and optional LLM command.
+When a run starts, the server creates a run record, starts a background worker,
+and streams subprocess output into an in-memory log buffer. The browser polls
+`GET /api/runs/:id` to show status and logs.
+
+This design favors transparency over sophistication. The logs show the exact
+generation command and the exact pytest command, making it clear where the LLM
+can be used and where it cannot.
+
 ### Runtime Validation
 
 Generated tests are validated before being written:
@@ -161,6 +209,16 @@ through `pytest-playwright` and passed. Zomato live crawling failed from this
 environment with HTTP/2 transport errors, so Zomato is covered through the
 committed complex fixture.
 
+Frontend evidence:
+
+- `src/internet_testing/webapp.py`
+- `tests/test_webapp.py`
+- the `internet-testing-web` script in `pyproject.toml`
+
+The web tests assert that generation can include `--llm-command` while pytest
+execution does not. A Playwright smoke check also loaded the local web page and
+verified the form and "No LLM during pytest" status badge.
+
 ## Known Limitations
 
 The crawler mostly explores links. It does not yet perform deeper deterministic
@@ -179,6 +237,14 @@ The live crawler depends on the network, browser automation, and each site's bot
 or transport behavior. Some websites, including Zomato from this environment,
 can fail before DOM capture.
 
+The web console currently stores run state in memory. If the process restarts,
+old run logs are lost. This is acceptable for a local development console but
+not enough for long-running team usage.
+
+The web UI polls for logs rather than using Server-Sent Events or WebSockets.
+Polling is simpler and reliable for local runs, but it is less efficient for
+many concurrent users or very long logs.
+
 ## Future Improvements
 
 ### Add an Exploration Manifest
@@ -194,6 +260,9 @@ Persist a JSON manifest for every run. It should include:
 - replay results
 
 This would make debugging and audits much easier.
+
+The same manifest should be linked from the web console so each UI run has a
+durable artifact beyond the in-memory log stream.
 
 ### Add Deterministic Interaction Recipes
 
@@ -236,6 +305,27 @@ This would preserve LLM flexibility while improving reproducibility.
 After generating a test file, automatically run it once and remove or quarantine
 assertions that fail because of visibility, redirect, or personalization issues.
 The final output would contain only assertions that passed replay.
+
+### Persist Web Runs
+
+Store web runs on disk using a small JSON record per run. Persist:
+
+- run configuration
+- generated output path
+- generation command
+- pytest command
+- status transitions
+- logs
+- final test summary
+
+This would make the web console useful after a process restart and would support
+downloading or comparing previous runs.
+
+### Stream Logs With Server-Sent Events
+
+Replace polling with Server-Sent Events once run logs become larger or multiple
+operators use the tool. SSE would keep the frontend simple while reducing
+request overhead and improving perceived responsiveness.
 
 ### Add Site Profiles
 
