@@ -3,6 +3,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from internet_testing.cli import main
 from internet_testing.explorer import explore_html_site
@@ -145,6 +146,86 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
             generated = output.read_text()
             self.assertEqual(exit_code, 0)
             self.assertIn("def test_cli_llm_contract", generated)
+            validate_generated_playwright(generated)
+
+    def test_openai_generation_sends_dom_evidence_and_validates_plain_playwright(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                return type(
+                    "FakeResponse",
+                    (),
+                    {
+                        "output_text": (
+                            "from playwright.sync_api import Page, expect\n\n"
+                            "def test_model_written_contract(page: Page):\n"
+                            "    page.goto('https://www.flipkart.com/')\n"
+                            "    expect(page).to_have_url('https://www.flipkart.com/')\n"
+                        )
+                    },
+                )()
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        client = FakeClient()
+        code = generate_tests_with_openai(
+            [("https://www.flipkart.com/", "<button aria-label='Search'>Search</button>")],
+            config=OpenAIGenerationConfig(api_key="test-key", model="gpt-5.5"),
+            client=client,
+        )
+
+        self.assertIn("def test_model_written_contract", code)
+        self.assertEqual(client.responses.calls[0]["model"], "gpt-5.5")
+        serialized_input = str(client.responses.calls[0]["input"])
+        self.assertIn("https://www.flipkart.com/", serialized_input)
+        self.assertIn("Search", serialized_input)
+        validate_generated_playwright(code)
+
+    def test_openai_generation_requires_api_key_before_client_creation(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
+
+        with patch("internet_testing.openai_generator._load_openai_api_key", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "OPENAI_API_KEY"):
+                generate_tests_with_openai(
+                    [("https://www.flipkart.com/", "<button aria-label='Search'>Search</button>")],
+                    config=OpenAIGenerationConfig(api_key=None),
+                )
+
+    def test_cli_openai_generation_writes_validated_playwright_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "test_generated.py"
+
+            with patch("internet_testing.cli.generate_tests_with_openai") as generate:
+                generate.return_value = (
+                    "from playwright.sync_api import Page, expect\n\n"
+                    "def test_cli_model_contract(page: Page):\n"
+                    "    page.goto('https://www.flipkart.com/')\n"
+                    "    expect(page).to_have_url('https://www.flipkart.com/')\n"
+                )
+
+                exit_code = main(
+                    [
+                        "--html",
+                        f"https://www.flipkart.com/={Path(__file__).parent / 'fixtures' / 'swiggy_complex.html'}",
+                        "--openai",
+                        "--openai-model",
+                        "gpt-5.5",
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            generated = output.read_text()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("def test_cli_model_contract", generated)
+            self.assertEqual(generate.call_args.kwargs["config"].model, "gpt-5.5")
             validate_generated_playwright(generated)
 
 

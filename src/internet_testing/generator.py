@@ -35,14 +35,7 @@ def generate_playwright_tests(pages: list[tuple[str, str]]) -> str:
 
 
 def generate_tests_with_llm(pages: list[tuple[str, str]], command: list[str]) -> str:
-    payload = {
-        "instructions": (
-            "Write Python Playwright pytest tests from the provided explored DOM evidence. "
-            "The generated file must import only playwright.sync_api Page and expect, "
-            "must not call any model provider or external service, and must be deterministic."
-        ),
-        "pages": [_page_payload(url, html) for url, html in pages],
-    }
+    payload = build_generation_payload(pages)
     completed = subprocess.run(
         command,
         input=json.dumps(payload, sort_keys=True),
@@ -58,6 +51,17 @@ def generate_tests_with_llm(pages: list[tuple[str, str]], command: list[str]) ->
     code = completed.stdout
     validate_generated_playwright(code)
     return code
+
+
+def build_generation_payload(pages: list[tuple[str, str]]) -> dict[str, object]:
+    return {
+        "instructions": (
+            "Write Python Playwright pytest tests from the provided explored DOM evidence. "
+            "The generated file must import only playwright.sync_api Page and expect, "
+            "must not call any model provider or external service, and must be deterministic."
+        ),
+        "pages": [_page_payload(url, html) for url, html in pages],
+    }
 
 
 def validate_generated_playwright(code: str) -> None:
@@ -76,6 +80,7 @@ def _page_payload(url: str, html: str) -> dict[str, object]:
     return {
         "url": url,
         "links": list(extract_same_origin_links(html, base_url=url)[:30]),
+        "html_excerpt": _html_excerpt(html),
         "elements": [
             {
                 "selector": element.selector,
@@ -86,6 +91,13 @@ def _page_payload(url: str, html: str) -> dict[str, object]:
             for element in iter_top_elements(model, limit=20)
         ],
     }
+
+
+def _html_excerpt(html: str, limit: int = 15_000) -> str:
+    compact = " ".join(html.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "...[truncated]"
 
 
 def _assertion_for(element: DiscoveredElement) -> str:

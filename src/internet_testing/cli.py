@@ -5,6 +5,12 @@ import shlex
 from pathlib import Path
 
 from internet_testing.generator import generate_playwright_tests, generate_tests_with_llm
+from internet_testing.openai_generator import (
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    OpenAIGenerationConfig,
+    generate_tests_with_openai,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +38,25 @@ def main(argv: list[str] | None = None) -> int:
         "--llm-command",
         help="Command that reads explored DOM JSON from stdin and writes Python Playwright tests to stdout.",
     )
+    parser.add_argument(
+        "--openai",
+        action="store_true",
+        help="Use the OpenAI Responses API to generate Playwright tests from explored DOM evidence.",
+    )
+    parser.add_argument(
+        "--openai-model",
+        default=DEFAULT_OPENAI_MODEL,
+        help=f"OpenAI model for test generation. Defaults to {DEFAULT_OPENAI_MODEL}.",
+    )
+    parser.add_argument(
+        "--openai-reasoning-effort",
+        default=DEFAULT_REASONING_EFFORT,
+        choices=["none", "low", "medium", "high", "xhigh"],
+        help=f"OpenAI reasoning effort for test generation. Defaults to {DEFAULT_REASONING_EFFORT}.",
+    )
     args = parser.parse_args(argv)
+    if args.openai and args.llm_command:
+        parser.error("use either --openai or --llm-command, not both")
 
     pages: list[tuple[str, str]] = []
     for mapping in args.html:
@@ -52,7 +76,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("provide at least one URL or --html URL=PATH")
 
     output = Path(args.output)
-    if args.llm_command:
+    if args.openai:
+        code = generate_tests_with_openai(
+            pages,
+            config=OpenAIGenerationConfig(
+                model=args.openai_model,
+                reasoning_effort=args.openai_reasoning_effort,
+            ),
+        )
+    elif args.llm_command:
         code = generate_tests_with_llm(pages, command=shlex.split(args.llm_command))
     else:
         code = generate_playwright_tests(pages)

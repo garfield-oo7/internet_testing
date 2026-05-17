@@ -24,6 +24,27 @@ class WebAppTests(unittest.TestCase):
         self.assertNotIn("--llm-command", execution)
         self.assertNotIn("write_tests.py", " ".join(execution))
 
+    def test_build_run_commands_keeps_openai_generation_separate_from_pytest_execution(self):
+        config = RunConfig(
+            url="https://www.flipkart.com/",
+            max_pages=4,
+            max_depth=1,
+            use_openai=True,
+            openai_model="gpt-5.5",
+            openai_reasoning_effort="medium",
+        )
+
+        generation, execution = build_run_commands(config, Path("/tmp/run/test_generated.py"))
+
+        self.assertIn("--openai", generation)
+        self.assertIn("--openai-model", generation)
+        self.assertIn("gpt-5.5", generation)
+        self.assertIn("--openai-reasoning-effort", generation)
+        self.assertEqual(generation[:3], [sys.executable, "-m", "internet_testing.cli"])
+        self.assertEqual(execution[:3], [sys.executable, "-m", "pytest"])
+        self.assertNotIn("--openai", execution)
+        self.assertNotIn("--openai-model", execution)
+
     def test_create_run_stores_initial_log_and_output_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             run = create_run(

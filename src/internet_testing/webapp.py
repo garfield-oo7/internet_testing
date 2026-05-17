@@ -12,6 +12,8 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from internet_testing.openai_generator import DEFAULT_OPENAI_MODEL, DEFAULT_REASONING_EFFORT
+
 
 @dataclass(frozen=True)
 class RunConfig:
@@ -19,6 +21,9 @@ class RunConfig:
     max_pages: int = 4
     max_depth: int = 1
     llm_command: str = ""
+    use_openai: bool = False
+    openai_model: str = DEFAULT_OPENAI_MODEL
+    openai_reasoning_effort: str = DEFAULT_REASONING_EFFORT
 
 
 @dataclass
@@ -51,6 +56,16 @@ def build_run_commands(config: RunConfig, output_path: Path) -> tuple[list[str],
     ]
     if config.llm_command.strip():
         generation.extend(["--llm-command", config.llm_command.strip()])
+    if config.use_openai:
+        generation.extend(
+            [
+                "--openai",
+                "--openai-model",
+                config.openai_model,
+                "--openai-reasoning-effort",
+                config.openai_reasoning_effort,
+            ]
+        )
 
     execution = [
         sys.executable,
@@ -211,7 +226,23 @@ def _config_from_payload(payload: dict[str, Any]) -> RunConfig:
     max_pages = _bounded_int(payload.get("max_pages", 4), minimum=1, maximum=12)
     max_depth = _bounded_int(payload.get("max_depth", 1), minimum=0, maximum=3)
     llm_command = str(payload.get("llm_command", "")).strip()
-    return RunConfig(url=url, max_pages=max_pages, max_depth=max_depth, llm_command=llm_command)
+    use_openai = bool(payload.get("use_openai", False))
+    if use_openai and llm_command:
+        raise ValueError("Use either OpenAI generation or an LLM command, not both.")
+    openai_model = str(payload.get("openai_model", DEFAULT_OPENAI_MODEL)).strip() or DEFAULT_OPENAI_MODEL
+    openai_reasoning_effort = (
+        str(payload.get("openai_reasoning_effort", DEFAULT_REASONING_EFFORT)).strip()
+        or DEFAULT_REASONING_EFFORT
+    )
+    return RunConfig(
+        url=url,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        llm_command=llm_command,
+        use_openai=use_openai,
+        openai_model=openai_model,
+        openai_reasoning_effort=openai_reasoning_effort,
+    )
 
 
 def _bounded_int(value: Any, minimum: int, maximum: int) -> int:
@@ -456,7 +487,27 @@ INDEX_HTML = """<!doctype html>
           LLM command for generation
           <input id="llm_command" name="llm_command" placeholder="python scripts/write_tests_with_model.py">
         </label>
-        <p class="hint">The LLM command only receives exploration JSON for test generation. The generated file is then run by pytest without that command.</p>
+        <label>
+          <input id="use_openai" name="use_openai" type="checkbox">
+          Use OpenAI for generation
+        </label>
+        <div class="row">
+          <label>
+            OpenAI model
+            <input id="openai_model" name="openai_model" value="gpt-5.5">
+          </label>
+          <label>
+            Reasoning effort
+            <select id="openai_reasoning_effort" name="openai_reasoning_effort">
+              <option value="medium" selected>medium</option>
+              <option value="low">low</option>
+              <option value="high">high</option>
+              <option value="xhigh">xhigh</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">OpenAI and LLM commands only receive exploration JSON for test generation. The generated file is then run by pytest without that command or any OpenAI API call.</p>
         <button id="submit" type="submit">Run website test</button>
       </form>
     </section>
@@ -486,7 +537,10 @@ INDEX_HTML = """<!doctype html>
         url: form.url.value,
         max_pages: form.max_pages.value,
         max_depth: form.max_depth.value,
-        llm_command: form.llm_command.value
+        llm_command: form.llm_command.value,
+        use_openai: form.use_openai.checked,
+        openai_model: form.openai_model.value,
+        openai_reasoning_effort: form.openai_reasoning_effort.value
       };
 
       const response = await fetch("/api/runs", {
