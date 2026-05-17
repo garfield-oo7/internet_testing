@@ -49,6 +49,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("4", generation)
         self.assertIn("--agent-max-seconds", generation)
         self.assertIn("30", generation)
+        self.assertNotIn("--max-pages", generation)
+        self.assertNotIn("--max-depth", generation)
         self.assertEqual(generation[:3], [sys.executable, "-m", "internet_testing.cli"])
         self.assertEqual(execution[:3], [sys.executable, "-m", "pytest"])
         self.assertNotIn("--openai", execution)

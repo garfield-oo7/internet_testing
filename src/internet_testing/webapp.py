@@ -50,13 +50,11 @@ def build_run_commands(config: RunConfig, output_path: Path) -> tuple[list[str],
         "-m",
         "internet_testing.cli",
         config.url,
-        "--max-pages",
-        str(config.max_pages),
-        "--max-depth",
-        str(config.max_depth),
         "--output",
         str(output_path),
     ]
+    if not config.use_openai:
+        generation.extend(["--max-pages", str(config.max_pages), "--max-depth", str(config.max_depth)])
     if config.llm_command.strip():
         generation.extend(["--llm-command", config.llm_command.strip()])
     if config.use_openai:
