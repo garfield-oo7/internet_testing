@@ -144,6 +144,20 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fill"):
             validate_generated_playwright(generated)
 
+    def test_validator_rejects_javascript_style_first_and_last_locator_calls(self):
+        generated = textwrap.dedent(
+            """
+            from playwright.sync_api import Page, expect
+
+            def test_bad(page: Page):
+                page.goto("https://www.flipkart.com/")
+                expect(page.locator("h1").first()).to_be_visible()
+            """
+        )
+
+        with self.assertRaisesRegex(ValueError, "first"):
+            validate_generated_playwright(generated)
+
     def test_validator_allows_screenshot_assertion_only_with_existing_baseline(self):
         generated = textwrap.dedent(
             """
@@ -460,6 +474,8 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertIn("happy path", author)
         self.assertIn("boundary", author)
         self.assertIn("invalid", author)
+        self.assertIn(".first", author)
+        self.assertIn(".first()", author)
 
 
 if __name__ == "__main__":

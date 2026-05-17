@@ -205,7 +205,8 @@ def _agent_author_prompt() -> str:
         "Do not import model SDKs, os, requests, httpx, or read files/env at runtime. For every "
         "input field covered, emit 2-4 test functions or a pytest parametrize block with "
         "deterministic literal values baked directly into the tests, covering happy path, "
-        "boundary, and invalid cases where applicable."
+        "boundary, and invalid cases where applicable. Use Playwright Python Locator.first "
+        "and Locator.last as properties, for example `.first`, not `.first()`."
     )
 
 

@@ -71,6 +71,7 @@ def validate_generated_playwright(code: str, baseline_dir: Path | None = None) -
     _validate_imports(tree)
     _validate_no_environment_access(tree)
     _validate_literal_input_values(tree)
+    _validate_python_locator_properties(tree)
     _validate_screenshot_baselines(tree, baseline_dir=baseline_dir)
 
     lowered = code.lower()
@@ -118,6 +119,16 @@ def _validate_literal_input_values(tree: ast.AST) -> None:
                 raise ValueError(
                     f"generated Playwright test {node.func.attr}() arguments must be string literals"
                 )
+
+
+def _validate_python_locator_properties(tree: ast.AST) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {"first", "last"}:
+            raise ValueError(
+                f"generated Playwright test must use Locator.{node.func.attr} as a property, not {node.func.attr}()"
+            )
 
 
 def _validate_screenshot_baselines(tree: ast.AST, baseline_dir: Path | None) -> None:
