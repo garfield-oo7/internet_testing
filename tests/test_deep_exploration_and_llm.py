@@ -390,20 +390,23 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         class FakeResponses:
             def __init__(self):
                 self.calls = []
+                self.responses = [
+                    FakeResponse("r1", output=[FakeCall()]),
+                    FakeResponse("r2", output_text="DONE_EXPLORING"),
+                    FakeResponse(
+                        "r3",
+                        output_text=(
+                            "from playwright.sync_api import Page, expect\n\n"
+                            "def test_partial_notes_contract(page: Page):\n"
+                            "    page.goto('https://example.com/')\n"
+                            "    expect(page).to_have_url('https://example.com/')\n"
+                        ),
+                    ),
+                ]
 
             def create(self, **kwargs):
                 self.calls.append(kwargs)
-                if len(self.calls) == 1:
-                    return FakeResponse("r1", output=[FakeCall()])
-                return FakeResponse(
-                    "r2",
-                    output_text=(
-                        "from playwright.sync_api import Page, expect\n\n"
-                        "def test_partial_notes_contract(page: Page):\n"
-                        "    page.goto('https://example.com/')\n"
-                        "    expect(page).to_have_url('https://example.com/')\n"
-                    ),
-                )
+                return self.responses.pop(0)
 
         class FakeClient:
             def __init__(self):
@@ -426,9 +429,12 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         )
 
         self.assertIn("def test_partial_notes_contract", code)
-        self.assertEqual(len(client.responses.calls), 2)
-        self.assertNotIn("tools", client.responses.calls[1])
-        author_payload = client.responses.calls[1]["input"][0]["content"]
+        self.assertEqual(len(client.responses.calls), 3)
+        tool_output = client.responses.calls[1]["input"][0]
+        self.assertEqual(tool_output["type"], "function_call_output")
+        self.assertIn("Agent tool call limit reached: 1", tool_output["output"])
+        self.assertNotIn("tools", client.responses.calls[2])
+        author_payload = client.responses.calls[2]["input"][0]["content"]
         self.assertIn("exploration_stop_reason", author_payload)
         self.assertIn("Agent tool call limit reached: 1", author_payload)
 

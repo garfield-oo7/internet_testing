@@ -98,7 +98,7 @@ def generate_tests_with_openai_agent(
             break
         outputs = []
         budget_exhausted = False
-        for call in calls:
+        for index, call in enumerate(calls):
             try:
                 result = _dispatch_tool_call(session, call["name"], call["arguments"])
             except RuntimeError as exc:
@@ -106,8 +106,8 @@ def generate_tests_with_openai_agent(
                     raise
                 if hasattr(session, "notes"):
                     session.notes.setdefault("exploration_stop_reason", []).append(str(exc))
+                result = {"error": str(exc), "stop_exploration": True}
                 budget_exhausted = True
-                break
             except ValueError as exc:
                 if str(exc).startswith("Unsupported OpenAI tool call:"):
                     raise
@@ -119,8 +119,22 @@ def generate_tests_with_openai_agent(
                     "output": json.dumps(result, sort_keys=True),
                 }
             )
-        if budget_exhausted:
-            break
+            if budget_exhausted:
+                for skipped_call in calls[index + 1:]:
+                    outputs.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": skipped_call["call_id"],
+                            "output": json.dumps(
+                                {
+                                    "error": "Skipped because agent tool budget was exhausted.",
+                                    "stop_exploration": True,
+                                },
+                                sort_keys=True,
+                            ),
+                        }
+                    )
+                break
         response = client.responses.create(
             model=config.model,
             reasoning={"effort": effort},
@@ -128,6 +142,8 @@ def generate_tests_with_openai_agent(
             previous_response_id=getattr(response, "id", None),
             input=outputs,
         )
+        if budget_exhausted:
+            break
     else:
         raise RuntimeError(f"OpenAI exploration exceeded max tool turns: {config.max_tool_turns}")
 
