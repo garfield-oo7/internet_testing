@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 internet-testing = "internet_testing.cli:main"
+internet-testing-web = "internet_testing.webapp:main"
 
 [tool.uv]
 package = true

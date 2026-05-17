@@ -53,6 +53,19 @@ uv run --active internet-testing \
 
 The CLI validates the model output before writing it.
 
+## Web Console
+
+Run the local web UI:
+
+```bash
+uv run --active internet-testing-web --host 127.0.0.1 --port 8765
+```
+
+Open `http://127.0.0.1:8765`, paste a website URL, set crawl limits, and
+optionally provide an LLM command for the generation phase. The UI streams the
+generation and pytest logs from the same run. The pytest execution command is
+separate from the LLM command, so generated tests still run without LLM usage.
+
 From saved HTML fixtures, which is useful for repeatable verification:
 
 ```bash
