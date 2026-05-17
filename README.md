@@ -2,16 +2,29 @@
 
 A bounded DOM explorer and Python Playwright test generator.
 
-The application crawls live website URLs with Playwright, explores same-origin
-links in a deterministic breadth-first order, extracts stable DOM contracts, and
-writes Python Playwright tests. Test generation can use an external model
-command, but the generated tests are validated and run without any model call at
-test execution time.
+## Purpose
+
+Internet Testing helps evaluate real websites by exploring their DOMs and
+generating Python Playwright tests from the discovered page structure. It is
+designed for complicated production websites with generated markup, dynamic
+links, and large DOMs.
+
+The important boundary is that an LLM may help define or write the test cases
+during generation, but the generated tests are plain Playwright tests. Test
+execution uses `pytest-playwright` and does not call an LLM.
+
+At a high level, the application:
+
+1. Opens a website with Playwright.
+2. Crawls same-origin links in a bounded breadth-first order.
+3. Extracts stable DOM evidence such as accessible names, roles, and test IDs.
+4. Generates a Python Playwright test file.
+5. Runs that generated test file and shows the logs.
 
 For a detailed architecture write-up, see
 [docs/architecture.md](docs/architecture.md).
 
-## Environment
+## Setup
 
 Use the active `internet_testing` Python environment with `uv`:
 
@@ -25,7 +38,32 @@ For live crawling or running generated Playwright tests, install a browser once:
 uv run --active playwright install chromium
 ```
 
-## Generate Tests
+## Run the Web Application
+
+Start the local web console:
+
+```bash
+uv run --active internet-testing-web --host 127.0.0.1 --port 8765
+```
+
+Open:
+
+```text
+http://127.0.0.1:8765
+```
+
+In the web UI:
+
+1. Paste a full website URL, for example `https://www.flipkart.com/`.
+2. Set `Max pages` and `Max depth` to control how much of the site is explored.
+3. Optionally enter an LLM command for the generation phase.
+4. Click `Run website test`.
+5. Watch the generation and pytest logs in the same page.
+
+The LLM command is only used to generate the test file. The pytest command that
+runs the generated test file is separate and does not receive the LLM command.
+
+## Run From the CLI
 
 From live URLs:
 
@@ -52,19 +90,6 @@ uv run --active internet-testing \
 ```
 
 The CLI validates the model output before writing it.
-
-## Web Console
-
-Run the local web UI:
-
-```bash
-uv run --active internet-testing-web --host 127.0.0.1 --port 8765
-```
-
-Open `http://127.0.0.1:8765`, paste a website URL, set crawl limits, and
-optionally provide an LLM command for the generation phase. The UI streams the
-generation and pytest logs from the same run. The pytest execution command is
-separate from the LLM command, so generated tests still run without LLM usage.
 
 From saved HTML fixtures, which is useful for repeatable verification:
 
