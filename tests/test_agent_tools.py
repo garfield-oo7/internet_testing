@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from internet_testing.agent_tools import AgentToolSession
+from internet_testing.agent_tools import AgentToolCaps, AgentToolSession
 
 
 class FakeElement:
@@ -123,6 +123,45 @@ class AgentToolSessionTests(unittest.TestCase):
             self.assertTrue(Path(screenshot["path"]).exists())
             self.assertEqual(note["notes"]["static_content"], ["Homepage has a single Example Domain heading."])
             self.assertEqual(session.trace[-1]["tool"], "note")
+
+    def test_tool_call_cap_stops_unbounded_agent_exploration(self):
+        session = AgentToolSession(
+            page=FakePage(),
+            start_url="https://example.com/",
+            caps=AgentToolCaps(max_tool_calls=1),
+        )
+
+        session.get_dom()
+
+        with self.assertRaisesRegex(RuntimeError, "tool call limit"):
+            session.list_links()
+
+    def test_distinct_url_cap_stops_extra_navigation_before_browser_call(self):
+        page = FakePage()
+        session = AgentToolSession(
+            page=page,
+            start_url="https://example.com/",
+            caps=AgentToolCaps(max_distinct_urls=1),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "URL limit"):
+            session.navigate("https://example.com/docs")
+
+        self.assertEqual(page.navigated, [])
+
+    def test_wall_clock_cap_stops_late_tool_calls(self):
+        times = iter([100.0, 100.5, 101.2])
+        session = AgentToolSession(
+            page=FakePage(),
+            start_url="https://example.com/",
+            caps=AgentToolCaps(max_wall_seconds=1.0),
+            time_provider=lambda: next(times),
+        )
+
+        session.get_dom()
+
+        with self.assertRaisesRegex(RuntimeError, "wall-clock"):
+            session.list_links()
 
 
 if __name__ == "__main__":
