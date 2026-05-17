@@ -2,7 +2,7 @@ from playwright.sync_api import Page, expect
 
 
 def test_www_flipkart_com_critical_dom_contracts(page: Page):
-    page.goto("https://www.flipkart.com/")
+    page.goto("https://www.flipkart.com/", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.flipkart.com/")
     expect(page.locator('span[aria-label="Advertise"]').first).to_be_visible()
     expect(page.get_by_role("button", name="Search for Products, Brands and More").first).to_be_visible()
@@ -19,7 +19,7 @@ def test_www_flipkart_com_critical_dom_contracts(page: Page):
 
 
 def test_www_flipkart_com_4g_mobile_phones_store_otracker_undefined_footer_critical_dom_contracts(page: Page):
-    page.goto("https://www.flipkart.com/4g-mobile-phones-store?otracker=undefined_footer")
+    page.goto("https://www.flipkart.com/4g-mobile-phones-store?otracker=undefined_footer", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.flipkart.com/4g-mobile-phones-store?otracker=undefined_footer")
     expect(page.locator('span[aria-label="Advertise"]').first).to_be_visible()
     expect(page.get_by_role("button", name="Search for Products, Brands and More").first).to_be_visible()
@@ -36,7 +36,7 @@ def test_www_flipkart_com_4g_mobile_phones_store_otracker_undefined_footer_criti
 
 
 def test_www_flipkart_com_aa_2025_new_at_store_critical_dom_contracts(page: Page):
-    page.goto("https://www.flipkart.com/aa-2025-new-at-store")
+    page.goto("https://www.flipkart.com/aa-2025-new-at-store", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.flipkart.com/aa-2025-new-at-store")
     expect(page.locator('span[aria-label="Advertise"]').first).to_be_visible()
     expect(page.get_by_role("button", name="Next Slide").first).to_be_visible()
@@ -53,7 +53,7 @@ def test_www_flipkart_com_aa_2025_new_at_store_critical_dom_contracts(page: Page
 
 
 def test_www_flipkart_com_ai_laptops_store_otracker_undefined_footer_critical_dom_contracts(page: Page):
-    page.goto("https://www.flipkart.com/ai-laptops-store?otracker=undefined_footer")
+    page.goto("https://www.flipkart.com/ai-laptops-store?otracker=undefined_footer", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.flipkart.com/ai-laptops-store?otracker=undefined_footer")
     expect(page.locator('span[aria-label="Advertise"]').first).to_be_visible()
     expect(page.get_by_role("button", name="Search for Products, Brands and More").first).to_be_visible()

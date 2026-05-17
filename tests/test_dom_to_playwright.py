@@ -45,8 +45,8 @@ class DomToPlaywrightTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertIn("from playwright.sync_api import Page, expect", first)
-        self.assertIn('page.goto("https://www.swiggy.com/")', first)
-        self.assertIn('page.goto("https://www.zomato.com/ncr")', first)
+        self.assertIn('page.goto("https://www.swiggy.com/", wait_until="domcontentloaded")', first)
+        self.assertIn('page.goto("https://www.zomato.com/ncr", wait_until="domcontentloaded")', first)
         self.assertRegex(first, re.escape('expect(page.locator(\'[data-testid="restaurant-card"]\').first).to_be_visible()'))
         self.assertRegex(first, re.escape('expect(page.get_by_role("button", name="Book a table").first).to_be_visible()'))
         self.assertNotIn("openai", first.lower())

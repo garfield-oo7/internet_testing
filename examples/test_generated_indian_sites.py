@@ -2,7 +2,7 @@ from playwright.sync_api import Page, expect
 
 
 def test_www_swiggy_com_critical_dom_contracts(page: Page):
-    page.goto("https://www.swiggy.com/")
+    page.goto("https://www.swiggy.com/", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.swiggy.com/")
     expect(page.locator('[data-testid="restaurant-card"]').first).to_be_visible()
     expect(page.get_by_role("button", name="Add All American Cheese Burger from Truffles").first).to_be_visible()
@@ -16,7 +16,7 @@ def test_www_swiggy_com_critical_dom_contracts(page: Page):
 
 
 def test_www_zomato_com_ncr_critical_dom_contracts(page: Page):
-    page.goto("https://www.zomato.com/ncr")
+    page.goto("https://www.zomato.com/ncr", wait_until="domcontentloaded")
     expect(page).to_have_url("https://www.zomato.com/ncr")
     expect(page.locator('[data-testid="restaurant-card"]').first).to_be_visible()
     expect(page.get_by_role("combobox", name="Search for restaurant, cuisine or a dish").first).to_be_visible()

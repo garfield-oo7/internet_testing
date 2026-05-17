@@ -20,7 +20,7 @@ def generate_playwright_tests(pages: list[tuple[str, str]]) -> str:
         lines.extend(
             [
                 f"def {function_name}(page: Page):",
-                f"    page.goto({json.dumps(model.url)})",
+                f"    page.goto({json.dumps(model.url)}, wait_until=\"domcontentloaded\")",
                 f"    expect(page).to_have_url({json.dumps(model.url)})",
             ]
         )
