@@ -254,6 +254,49 @@ class DeepExplorationAndLlmTests(unittest.TestCase):
         self.assertIn("Search", serialized_input)
         validate_generated_playwright(code)
 
+    def test_openai_generation_retries_transient_rate_limits(self):
+        from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai
+
+        class RateLimitError(Exception):
+            pass
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    raise RateLimitError("Please try again in 0.01s.")
+                return type(
+                    "FakeResponse",
+                    (),
+                    {
+                        "output_text": (
+                            "from playwright.sync_api import Page, expect\n\n"
+                            "def test_after_retry(page: Page):\n"
+                            "    page.goto('https://www.rbi.org.in/')\n"
+                            "    expect(page).to_have_url('https://www.rbi.org.in/')\n"
+                        )
+                    },
+                )()
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = FakeResponses()
+
+        client = FakeClient()
+        with patch("internet_testing.openai_generator.time.sleep") as sleep:
+            code = generate_tests_with_openai(
+                [("https://www.rbi.org.in/", "<input id='txtSearch1'>")],
+                config=OpenAIGenerationConfig(api_key="test-key"),
+                client=client,
+            )
+
+        self.assertIn("def test_after_retry", code)
+        self.assertEqual(len(client.responses.calls), 2)
+        sleep.assert_called_once()
+
     def test_openai_agent_generation_uses_tools_before_authoring_tests(self):
         from internet_testing.openai_generator import OpenAIGenerationConfig, generate_tests_with_openai_agent
 

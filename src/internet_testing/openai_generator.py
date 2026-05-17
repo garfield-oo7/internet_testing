@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
+import time
 from typing import Any
 
 from internet_testing.generator import build_generation_payload, validate_generated_playwright
@@ -36,7 +38,8 @@ def generate_tests_with_openai(
             raise RuntimeError("OPENAI_API_KEY is required for OpenAI test generation.")
         client = _create_openai_client(api_key)
 
-    response = client.responses.create(
+    response = _create_response(
+        client,
         model=config.model,
         reasoning={"effort": effort},
         input=[
@@ -75,7 +78,8 @@ def generate_tests_with_openai_agent(
             raise RuntimeError("OPENAI_API_KEY is required for OpenAI test generation.")
         client = _create_openai_client(api_key)
 
-    response = client.responses.create(
+    response = _create_response(
+        client,
         model=config.model,
         reasoning={"effort": effort},
         tools=_tool_definitions(),
@@ -141,7 +145,8 @@ def generate_tests_with_openai_agent(
                         }
                     )
                 break
-        response = client.responses.create(
+        response = _create_response(
+            client,
             model=config.model,
             reasoning={"effort": effort},
             tools=_tool_definitions(),
@@ -174,7 +179,7 @@ def generate_tests_with_openai_agent(
     if chain_author_to_response:
         author_request["previous_response_id"] = getattr(response, "id", None)
 
-    author_response = client.responses.create(**author_request)
+    author_response = _create_response(client, **author_request)
     code = _validated_or_repaired_code(
         client=client,
         response=author_response,
@@ -199,7 +204,8 @@ def _validated_or_repaired_code(
         validate_generated_playwright(code, baseline_dir=baseline_dir)
         return code
     except ValueError as exc:
-        repair_response = client.responses.create(
+        repair_response = _create_response(
+            client,
             model=config.model,
             reasoning={"effort": effort},
             previous_response_id=getattr(response, "id", None),
@@ -224,6 +230,30 @@ def _validated_or_repaired_code(
     repaired_code = _extract_output_text(repair_response)
     validate_generated_playwright(repaired_code, baseline_dir=baseline_dir)
     return repaired_code
+
+
+def _create_response(client: Any, **kwargs: Any) -> Any:
+    for attempt in range(3):
+        try:
+            return client.responses.create(**kwargs)
+        except Exception as exc:
+            if not _is_rate_limit_error(exc) or attempt == 2:
+                raise
+            time.sleep(_retry_delay_seconds(str(exc)))
+    raise RuntimeError("unreachable")
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    return "ratelimit" in name or "rate limit" in message or "rate_limit" in message
+
+
+def _retry_delay_seconds(message: str) -> float:
+    match = re.search(r"try again in ([0-9.]+)s", message, flags=re.IGNORECASE)
+    if not match:
+        return 2.0
+    return min(max(float(match.group(1)), 0.5), 10.0)
 
 
 def _create_openai_client(api_key: str):
