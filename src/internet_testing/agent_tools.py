@@ -5,6 +5,8 @@ from pathlib import Path
 import re
 import time
 from typing import Any
+from urllib import request
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 
 from internet_testing.analyzer import extract_same_origin_links
@@ -25,6 +27,7 @@ class AgentToolSession:
     timeout_ms: int = 10_000
     caps: AgentToolCaps = field(default_factory=AgentToolCaps)
     time_provider: Any = time.monotonic
+    status_fetcher: Any | None = None
     notes: dict[str, list[str]] = field(default_factory=dict)
     trace: list[dict[str, str]] = field(default_factory=list)
     visited_urls: set[str] = field(default_factory=set)
@@ -50,6 +53,13 @@ class AgentToolSession:
         base_url = getattr(self.page, "url", self.start_url)
         links = list(extract_same_origin_links(self.page.content(), base_url=base_url))
         return self._record("list_links", {"url": base_url, "links": links})
+
+    def link_status(self, url: str) -> dict[str, object]:
+        self._check_tool_budget()
+        self._require_same_origin(url)
+        fetcher = self.status_fetcher or _fetch_status
+        status = fetcher(url, self.timeout_ms)
+        return self._record("link_status", {"url": url, "status": status})
 
     def get_dom(self, limit: int = 20_000) -> dict[str, object]:
         self._check_tool_budget()
@@ -148,6 +158,17 @@ def _safe_screenshot_name(name: str) -> str:
 
 def _safe_note_key(key: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", key.strip()).strip("._") or "note"
+
+
+def _fetch_status(url: str, timeout_ms: int) -> int | None:
+    req = request.Request(url, method="HEAD", headers={"User-Agent": "internet-testing/0.1"})
+    try:
+        with request.urlopen(req, timeout=timeout_ms / 1000) as response:
+            return int(response.status)
+    except HTTPError as exc:
+        return int(exc.code)
+    except URLError:
+        return None
 
 
 _ACCESSIBLE_TREE_SCRIPT = """

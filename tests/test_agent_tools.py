@@ -163,6 +163,29 @@ class AgentToolSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "wall-clock"):
             session.list_links()
 
+    def test_link_status_checks_route_without_navigating_page(self):
+        page = FakePage()
+        checked: list[str] = []
+
+        def fake_status_fetcher(url: str, timeout_ms: int) -> int:
+            checked.append(url)
+            return 204
+
+        session = AgentToolSession(
+            page=page,
+            start_url="https://example.com/",
+            status_fetcher=fake_status_fetcher,
+        )
+
+        result = session.link_status("https://example.com/docs")
+
+        self.assertEqual(result["status"], 204)
+        self.assertEqual(checked, ["https://example.com/docs"])
+        self.assertEqual(page.navigated, [])
+        self.assertEqual(session.trace[-1]["tool"], "link_status")
+        with self.assertRaisesRegex(ValueError, "same origin"):
+            session.link_status("https://other.test/")
+
 
 if __name__ == "__main__":
     unittest.main()
