@@ -4,82 +4,55 @@ A bounded DOM explorer and Python Playwright test generator.
 
 ## Purpose
 
-Internet Testing helps evaluate real websites by exploring their DOMs and
-generating Python Playwright tests from the discovered page structure. It is
-designed for complicated production websites with generated markup, dynamic
-links, and large DOMs.
-
-The important boundary is that an LLM may help define or write the test cases
-during generation, but the generated tests are plain Playwright tests. Test
-execution uses `pytest-playwright` and does not call an LLM.
-
-At a high level, the application:
-
-1. Opens a website with Playwright.
-2. Crawls same-origin links in a bounded breadth-first order.
-3. Extracts stable DOM evidence such as accessible names, roles, and test IDs.
-4. Generates a Python Playwright test file.
-5. Runs that generated test file and shows the logs.
+Internet Testing explores a website with Playwright and turns the observed DOM
+evidence into Python Playwright tests. It can use OpenAI or another LLM only
+while generating the test file; the generated tests run later with
+`pytest-playwright` and do not call any LLM.
 
 For a detailed architecture write-up, see
 [docs/architecture.md](docs/architecture.md).
 
-## Setup
+## Run the Application
 
-Recommended setup uses the active `internet_testing` Python environment with
-`uv`:
+1. Install dependencies into the active Python environment:
 
 ```bash
 uv sync --active
 ```
 
-Alternatively, create and activate a virtual environment with standard Python
-tools, then install from `requirements.txt`:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
-
-The `requirements.txt` file is exported from `uv.lock` and includes the local
-package in editable mode, so the `internet-testing` and `internet-testing-web`
-commands are installed in the virtual environment.
-
-For live crawling or running generated Playwright tests, install a browser once.
-With `uv`:
+2. Install Chromium for Playwright:
 
 ```bash
 uv run --active playwright install chromium
 ```
 
-With the pip virtual environment:
-
-```bash
-python -m playwright install chromium
-```
-
-## Run the Web Application
-
-Start the local web console:
+3. Start the local web console:
 
 ```bash
 uv run --active internet-testing-web --host 127.0.0.1 --port 8765
 ```
 
-Open:
+4. Open the app:
 
 ```text
 http://127.0.0.1:8765
 ```
 
-In the web UI:
+In the web UI, enter a full URL, choose deterministic generation or OpenAI
+generation, set the crawl or agent limits, and click `Run website test`.
 
-1. Paste a full website URL, for example `https://www.flipkart.com/`.
-2. Set crawl limits for deterministic generation, or agent limits for OpenAI generation.
-3. Optionally enable OpenAI generation or enter an external LLM command for the generation phase.
-4. Click `Run website test`.
-5. Watch the generation and pytest logs in the same page.
+Alternative pip setup:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+The `requirements.txt` file is exported from `uv.lock` and includes the local
+package in editable mode, so the `internet-testing` and `internet-testing-web`
+commands are installed in the virtual environment.
 
 OpenAI and LLM commands are only used to generate the test file. The pytest
 command that runs the generated test file is separate and does not receive the
@@ -171,28 +144,13 @@ utility classes because they are unstable across deployments.
 ## Verify
 
 ```bash
-uv run --active python -m unittest discover -s tests
-uv run --active pytest \
-  examples/test_generated_live_flipkart_deep.py \
-  examples/test_generated_live_amazon_in_deep.py \
-  --browser chromium
+uv run --active pytest tests
 ```
 
 ## Current Indian-Site Evidence
 
-This repository includes deterministic fixtures for Swiggy and Zomato under
-`tests/fixtures/`, plus a generated Playwright artifact at
-`examples/test_generated_indian_sites.py`.
-
-Live deep crawling was exercised against two complex Indian commerce sites:
-
-1. Flipkart: `examples/test_generated_live_flipkart_deep.py`
-2. Amazon India: `examples/test_generated_live_amazon_in_deep.py`
-
-Those generated Playwright tests were run with Chromium through
-`pytest-playwright` and passed in this environment.
-
-Zomato live crawling from this environment failed at HTTPS transport before DOM
-capture: `net::ERR_HTTP2_PROTOCOL_ERROR` in Playwright and an HTTP/2 stream
-error with `curl`. Zomato is therefore covered with the committed complex DOM
-fixture rather than a live capture from this machine.
+Recent OpenAI-agent real-site findings are documented in
+[docs/real_site_agent_findings.md](docs/real_site_agent_findings.md). The live
+runs include India.gov.in, Meesho, RBI, and Wikipedia. Some sites return
+automation blocks such as `Access Denied`; those are documented as site-access
+findings rather than treated as normal functional coverage.

@@ -9,6 +9,7 @@ These runs used the live OpenAI-backed agent browser flow with the API key loade
 | Site | Type | Generated file | Pytest result | Finding |
 | --- | --- | --- | --- | --- |
 | `https://www.india.gov.in/` | Indian public site | `.runs/real_sites/test_india_gov_agent.py` | 4 passed, 0 failed | Site served an Akamai `Access Denied` page to automation, so the tests verify the blocked-page contract rather than the normal site. |
+| `https://www.meesho.com/` | Indian e-commerce site | `.runs/real_sites/test_meesho_agent.py` | 3 passed, 1 failed | Site served `Access Denied` with HTTP 403 to automation. The failed test expected favicon availability, but the favicon also returned 403. |
 | `https://www.rbi.org.in/` | Indian public site | `.runs/real_sites/test_rbi_agent.py` | 1 passed, 3 failed | Agent found real search controls, but generated click tests failed because a `ui-widget-overlay` intercepted the search button. |
 | `https://en.wikipedia.org/wiki/Main_Page` | Popular public site | `.runs/real_sites/test_wikipedia_agent.py` | 13 passed, 7 failed | Search and checkbox tests mostly worked; failures came from state-dependent submit/radio selectors that were absent on rerun. |
 
@@ -17,6 +18,9 @@ These runs used the live OpenAI-backed agent browser flow with the API key loade
 ```bash
 uv run --active internet-testing https://www.india.gov.in/ --openai --openai-model gpt-5.5 --openai-max-tool-turns 50 --agent-max-tool-calls 80 --agent-max-urls 5 --agent-max-seconds 240 --timeout-ms 45000 --output .runs/real_sites/test_india_gov_agent.py
 uv run --active pytest .runs/real_sites/test_india_gov_agent.py --browser chromium --tb=short
+
+uv run --active internet-testing https://www.meesho.com/ --openai --openai-model gpt-5.5 --openai-max-tool-turns 20 --agent-max-tool-calls 35 --agent-max-urls 3 --agent-max-seconds 120 --timeout-ms 45000 --output .runs/real_sites/test_meesho_agent.py
+uv run --active pytest .runs/real_sites/test_meesho_agent.py --browser chromium --tb=short
 
 uv run --active internet-testing https://www.rbi.org.in/ --openai --openai-model gpt-5.5 --openai-max-tool-turns 20 --agent-max-tool-calls 30 --agent-max-urls 3 --agent-max-seconds 120 --timeout-ms 45000 --output .runs/real_sites/test_rbi_agent.py
 uv run --active pytest .runs/real_sites/test_rbi_agent.py --browser chromium --tb=short
@@ -35,6 +39,15 @@ uv run --active pytest .runs/real_sites/test_wikipedia_agent.py --browser chromi
 - `test_blocked_page_has_no_links_forms_or_interactive_controls`
 
 Result: all 4 passed. These are valid tests for what automation received, but they are not useful coverage of the intended citizen-services UI.
+
+### Meesho
+
+- `test_homepage_returns_access_denied_page`
+- `test_access_denied_page_has_no_interactive_controls`
+- `test_known_content_paths_are_blocked`
+- `test_favicon_remains_available`
+
+Result: 3 passed and 1 failed. The passing tests correctly captured that Meesho returned HTTP 403 `Access Denied` for the homepage, known content paths, search, `robots.txt`, and `sitemap.xml`. The failed favicon test expected HTTP 200, but the live run returned HTTP 403 for `https://www.meesho.com/favicon.ico` as well. This is a generated-test quality issue: when the site is consistently blocked, asset availability assumptions should be avoided unless the agent directly verifies them during the final test execution flow.
 
 ### RBI
 

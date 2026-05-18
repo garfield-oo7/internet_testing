@@ -4,8 +4,9 @@
 
 Internet Testing is a bounded website exploration tool that captures DOM evidence
 from real websites and turns that evidence into Python Playwright tests. The
-generation step can use an external model command, but the generated test files
-are plain Playwright tests and run without any model dependency.
+generation step can use deterministic rules, an external model command, or the
+OpenAI Responses API, but the generated test files are plain Playwright tests and
+run without any model dependency.
 
 The tool has two entry points: a command-line interface for automation and a
 local web console for interactive runs. Both use the same generation and pytest
@@ -14,55 +15,103 @@ execution pipeline.
 The core workflow is:
 
 1. Explore a website URL with Playwright.
-2. Crawl same-origin pages in deterministic breadth-first order.
-3. Extract stable DOM evidence from each captured page.
+2. Collect bounded evidence with either deterministic crawling or OpenAI agent
+   browser tools.
+3. Extract or record stable DOM evidence such as selectors, roles, links,
+   screenshots, and notes.
 4. Generate Python Playwright tests from that evidence.
-5. Validate and run the generated tests without an LLM.
-6. Surface the run logs either in the terminal or in the web UI.
+5. Validate and, when possible, repair generated tests before writing them.
+6. Run the generated tests without an LLM.
+7. Surface the run logs either in the terminal or in the web UI.
 
 ## System Diagram
 
 ```mermaid
 flowchart TD
-    User["User"] --> WebUI["Web Console\ninternet-testing-web"]
-    User --> CLI["CLI\ninternet-testing"]
+    User["User"] --> UI["Web Console"]
+    User --> CLI["CLI"]
 
-    WebUI --> WebAPI["Local HTTP API\nPOST /api/runs\nGET /api/runs/:id"]
-    WebAPI --> RunState["In-memory run state\nstatus + logs + output path"]
-    WebAPI --> Worker["Background run worker"]
-    Worker --> Pipeline["Shared test pipeline"]
-    CLI --> Pipeline
+    UI --> API["Local Run API"]
+    API --> Worker["Background Worker"]
+    CLI --> Pipeline["Shared Run Pipeline"]
+    Worker --> Pipeline
 
-    Pipeline --> Inputs{"Input Mode"}
-    Inputs --> LiveURL["Live URLs"]
-    Inputs --> Fixtures["Saved HTML fixtures"]
+    Pipeline --> Input{"Input"}
+    Input --> URL["Live URL"]
+    Input --> HTML["Saved HTML Fixture"]
 
-    LiveURL --> PlaywrightCrawler["Playwright browser crawler"]
-    PlaywrightCrawler --> Explorer["Bounded BFS explorer\nmax-pages / max-depth"]
-    Explorer --> LinkFilter["Same-origin link extraction\ntracking/auth/cart filters"]
-    LinkFilter --> PlaywrightCrawler
+    URL --> Mode{"Generation Mode"}
+    HTML --> Analyzer["DOM Analyzer"]
 
-    Fixtures --> PageSet["Explored page set\nURL + HTML"]
-    PlaywrightCrawler --> PageSet
+    Mode --> Crawl["Deterministic BFS Crawl"]
+    Crawl --> Analyzer
 
-    PageSet --> Analyzer["DOM analyzer"]
-    Analyzer --> Evidence["Stable DOM evidence\nselectors, roles, names, text, links"]
+    Mode --> Agent["OpenAI Agent Browser"]
+    Agent --> Tools["Bounded Tools\nnavigate, DOM, links,\nselector verify, screenshot, note"]
+    Tools --> Notes["Notes + Tool Trace"]
 
-    Evidence --> GenerationMode{"Generation Mode"}
-    GenerationMode --> Deterministic["Built-in deterministic generator"]
-    GenerationMode --> LLMCommand["External LLM command\nstdin JSON / stdout Python"]
+    Analyzer --> Evidence["Structured DOM Evidence"]
+    Evidence --> BuiltIn["Built-in Generator"]
+    Evidence --> Command["External LLM Command"]
 
-    LLMCommand --> Validator["Generated test validator\nsyntax + Playwright import + blocked model terms"]
-    Deterministic --> TestFile["Python Playwright test file"]
-    Validator --> TestFile
+    Notes --> Author["OpenAI Authoring"]
+    BuiltIn --> Validate["Validate Generated Python"]
+    Command --> Validate
+    Author --> Validate
+
+    Validate --> Repair{"Repair Needed?"}
+    Repair -->|yes| RepairPass["One OpenAI Repair Pass"]
+    RepairPass --> Validate
+    Repair -->|no| TestFile["Python Playwright Test File"]
 
     TestFile --> Pytest["pytest-playwright"]
-    Pytest --> Browser["Chromium"]
-    Browser --> Result["Pass/fail result\nNo LLM at runtime"]
-    Result --> Logs["Execution logs"]
-    Logs --> RunState
-    RunState --> WebUI
+    Pytest --> Chromium["Chromium"]
+    Chromium --> Result["Pass / Fail\nNo LLM at Runtime"]
+    Result --> Logs["Logs + Findings"]
+    Logs --> UI
 ```
+
+## Diagram Explanation
+
+The CLI and web console both feed the same run pipeline. The web console adds a
+local API, background worker, and in-memory logs, but it does not own a separate
+testing implementation.
+
+Live URLs can take two generation paths. The deterministic path performs a
+bounded same-origin crawl, analyzes captured HTML, and generates tests from DOM
+evidence. The OpenAI path holds one Chromium page open and lets the model call a
+small browser-tool layer. Those tools gather bounded evidence, including DOM
+excerpts, accessibility-oriented nodes, link status checks, verified selectors,
+screenshots, and structured notes.
+
+All generation paths converge at the same validation boundary. The generated
+file must be plain Python Playwright code. If OpenAI-generated code fails local
+validation, the system allows one repair pass and validates the repaired file
+again. Pytest execution is always separate and never receives OpenAI settings,
+API keys, or external LLM commands.
+
+## Architecture Trade-offs
+
+The design favors controlled evidence over full-site crawling. That means a run
+is smaller, cheaper, and easier to audit, but it will not claim exhaustive site
+coverage.
+
+The OpenAI agent uses a constrained tool layer instead of direct browser access.
+This gives the model enough power to inspect pages and plan tests while keeping
+same-origin, unsafe-path, tool-call, URL-count, and wall-clock limits under the
+application's control.
+
+Generated tests are validated as source code before they are written. This
+catches unsafe imports, runtime model dependencies, non-literal test inputs,
+incorrect Playwright Python locator syntax, and missing screenshot baselines.
+The trade-off is that valid but flaky behavior can still pass static validation;
+execution feedback is documented today, and an execution-repair loop is a future
+improvement.
+
+The web console is intentionally local and simple. It uses `http.server`,
+background threads, and polling rather than a database, queue, or WebSocket
+stack. This keeps setup light for a developer tool, but it is not designed as a
+multi-user hosted service.
 
 ## Module Responsibilities
 
@@ -93,6 +142,18 @@ the built-in deterministic generator and the external model command adapter. The
 model adapter passes structured DOM evidence to a command through stdin and
 expects a complete Python Playwright test file on stdout. The returned file is
 validated before being written.
+
+`src/internet_testing/agent_tools.py` exposes one persistent Playwright page as a
+bounded tool session for OpenAI generation. It owns same-origin enforcement,
+unsafe auth/cart path rejection, tool-call limits, URL limits, wall-clock limits,
+screenshot capture, notes, and tool trace events.
+
+`src/internet_testing/openai_generator.py` owns OpenAI Responses API integration.
+It supports the older one-shot DOM-evidence generation path and the newer
+agentic browser-tool path. It also handles partial authoring when tool budgets
+are reached, recoverable tool rejections, pending function-call protocol
+requirements, one validation repair pass, and transient OpenAI rate-limit
+retries.
 
 ## Design Decisions
 
@@ -202,6 +263,12 @@ Generated tests are validated before being written:
 - It must import `Page` and `expect` from `playwright.sync_api`.
 - It must not contain blocked model-provider terms such as `openai`,
   `anthropic`, `langchain`, `llama`, `chatgpt`, or `litellm`.
+- It must not import runtime dependencies other than Playwright.
+- It must not read environment variables.
+- `fill()` and `type()` values must be string literals.
+- Playwright Python locator helpers must use `.first` and `.last` as properties,
+  not JavaScript-style `.first()` or `.last()` calls.
+- Screenshot assertions must reference an existing baseline image.
 
 This does not prove the generated tests are semantically perfect, but it prevents
 the most important class of failure for this project: tests that still depend on
@@ -226,6 +293,16 @@ The live generated tests for Flipkart and Amazon India were run with Chromium
 through `pytest-playwright` and passed. Zomato live crawling failed from this
 environment with HTTP/2 transport errors, so Zomato is covered through the
 committed complex fixture.
+
+OpenAI-agent real-site evidence:
+
+- `docs/real_site_agent_findings.md`
+- generated run artifacts under `.runs/real_sites/` during local runs
+
+Recent agent runs covered India.gov.in, Meesho, RBI, and Wikipedia. India.gov.in
+and Meesho returned access-denied responses to automation, RBI exposed an
+overlay-click failure in generated tests, and Wikipedia showed that some
+state-dependent selectors can disappear during replay.
 
 Frontend evidence:
 
@@ -254,7 +331,9 @@ syntactically valid test that is low value or flaky.
 
 The live crawler depends on the network, browser automation, and each site's bot
 or transport behavior. Some websites, including Zomato from this environment,
-can fail before DOM capture.
+can fail before DOM capture. Others, including India.gov.in and Meesho in recent
+agent runs, return access-denied pages to automation. Those are recorded as
+site-access findings rather than treated as normal functional coverage.
 
 The web console currently stores run state in memory. If the process restarts,
 old run logs are lost. This is acceptable for a local development console but
